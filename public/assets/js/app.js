@@ -251,8 +251,10 @@ function renderList() {
 }
 
 function renderStatus() {
-  const n = state.mails.length;
-  $('#countText').text((navigator.onLine ? '' : 'Offline · ') + (n ? `${n} saved` : ''));
+  const n = state.mails.length; const total = meta[state.folder].total;
+  $('#countText').text((navigator.onLine ? '' : 'Offline · ') + (n ? (total ? `${n} of ${total}` : `${n} saved`) : ''));
+  $('#totalInbox').text(meta.inbox.total || '');
+  $('#totalSent').text(meta.sent.total || '');
 }
 
 // Draw the list from what is saved on this device. Never waits on the network.
@@ -271,7 +273,8 @@ async function showFolder() {
 async function syncFolder(folder, reconcile) {
   const fm = meta[folder];
   const times = (mails) => mails.map((m) => Date.parse(m.date));
-  let counted = false; let newUnread = 0;
+  let counted = false; let newUnread = 0; let added = 0; let totalSet = false;
+  const takeTotal = (d) => { if (d.total !== undefined) { fm.total = d.total; totalSet = true; } };
   const applyReconcile = async (d) => {
     if (d.unread === undefined) return;
     meta.app.unread = d.unread; counted = true;
@@ -283,12 +286,16 @@ async function syncFolder(folder, reconcile) {
     await store.put(folder, d.mails);
     if (d.mails.length) { fm.newest = Math.max(...times(d.mails)); fm.oldest = Math.min(...times(d.mails)); }
     fm.hasOlder = d.hasMore;
+    takeTotal(d);
+    if (!totalSet && !d.hasMore) fm.total = d.mails.length;
     if (folder === 'inbox') await applyReconcile(d);
   } else {
     for (let i = 0, rec = reconcile; i < 20; i++, rec = false) {
       const d = await api(`/api/sync?folder=${folder}&since=${fm.newest}&limit=50${rec ? '&reconcile=1' : ''}`);
+      takeTotal(d);
       if (folder === 'inbox') await applyReconcile(d);
       if (!d.mails.length) break;
+      if (!totalSet) added += d.mails.length;
       await store.put(folder, d.mails);
       fm.newest = Math.max(fm.newest, ...times(d.mails));
       newUnread += d.mails.filter((m) => !m.read).length;
@@ -296,6 +303,7 @@ async function syncFolder(folder, reconcile) {
     }
   }
   if (folder === 'inbox' && !counted) meta.app.unread += newUnread;
+  if (!totalSet && added) fm.total = (fm.total || 0) + added;
   await saveMeta(folder);
   if (folder === 'inbox') await saveMeta('app');
 }
@@ -348,15 +356,34 @@ const FRAME_BASE = 'body{margin:0;padding:12px 4px;font:14px/1.5 -apple-system,S
 const FRAME_LIGHT = `${FRAME_CSP}<style>html{background:#fff}${FRAME_BASE}body{color:#202124}a{color:#1a56db}</style>`;
 const FRAME_DARK = `${FRAME_CSP}<style>html{background:transparent}${FRAME_BASE}body{color:#cdd6f4}a{color:#89b4fa}</style>`;
 
+// Phone back button / swipe: the reader and the sidebar are "layers" with their own history entry,
+// so back closes the layer instead of leaving the site.
+const layers = []; let ignorePop = 0;
+function pushLayer(name) { layers.push(name); history.pushState({ mb: name }, ''); }
+function closeLayer(name) {
+  $('body').removeClass(name === 'mail' ? 'mailcontent-show' : 'sidebar-show');
+  const i = layers.lastIndexOf(name);
+  if (i >= 0 && i === layers.length - 1) { layers.pop(); ignorePop++; history.back(); } else if (i >= 0) layers.splice(i, 1);
+}
+window.addEventListener('popstate', () => {
+  if (ignorePop) { ignorePop--; return; }
+  const name = layers.pop();
+  if (!name || name === 'mail') $('body').removeClass('mailcontent-show');
+  if (!name || name === 'side') $('body').removeClass('sidebar-show');
+});
+
 function showReader() {
   $('.mailcontent-placeholder').addClass('d-none').siblings().removeClass('d-none');
-  if (window.matchMedia('(max-width: 1199px)').matches) $('body').addClass('mailcontent-show');
+  if (window.matchMedia('(max-width: 1199px)').matches && !$('body').hasClass('mailcontent-show')) {
+    $('body').addClass('mailcontent-show');
+    pushLayer('mail');
+  }
 }
 
 function hideReader() {
   state.openId = null; state.openMail = null;
   $('.mailcontent-placeholder').removeClass('d-none').siblings().addClass('d-none');
-  $('body').removeClass('mailcontent-show');
+  closeLayer('mail');
 }
 
 function renderBody(m) {
@@ -481,7 +508,7 @@ $('#search').on('input', renderList);
 $('#refresh').on('click', (e) => { e.preventDefault(); syncAll({ reconcile: true, manual: true }); });
 $('#btnPdf').on('click', (e) => { e.preventDefault(); savePdf(); });
 $('#btnReply, #btnReplyTop').on('click', (e) => { e.preventDefault(); startReply(); });
-$('#mailBack').on('click', (e) => { e.preventDefault(); $('body').removeClass('mailcontent-show'); });
+$('#mailBack').on('click', (e) => { e.preventDefault(); closeLayer('mail'); });
 $('#avatar').on('click', (e) => {
   e.preventDefault();
   if (!navigator.onLine) return toast('Go online to sign out.');
@@ -495,7 +522,7 @@ $('#folders').on('click', '.nav-link', function (e) {
   $('#folderTitle').text(state.folder === 'sent' ? 'Sent' : 'Inbox');
   $('#search').val('');
   hideReader();
-  $('body').removeClass('sidebar-show');
+  closeLayer('side');
   state.shown = PAGE;
   showFolder().then(() => syncAll());
 });
@@ -503,10 +530,12 @@ $('#folders').on('click', '.nav-link', function (e) {
 // template behaviours (sidebar, compose window)
 $('.mailbox-menu').on('click', (e) => {
   e.preventDefault();
-  $('body').toggleClass(window.matchMedia('(max-width: 767px)').matches ? 'sidebar-show' : 'sidebar-hide');
+  if (window.matchMedia('(max-width: 767px)').matches) {
+    if ($('body').hasClass('sidebar-show')) closeLayer('side'); else { $('body').addClass('sidebar-show'); pushLayer('side'); }
+  } else $('body').toggleClass('sidebar-hide');
   mc.update();
 });
-$('.backdrop').on('click', () => $('body').removeClass('sidebar-show'));
+$('.backdrop').on('click', () => closeLayer('side'));
 $('.mailbox-search .form-control').on('focusin focusout', function (e) { $(this).parent().toggleClass('onfocus', e.type === 'focusin'); });
 $('.menu-compose').on('click', (e) => { e.preventDefault(); openCompose(); });
 $('.compose-title, .nav-link-minimize').on('click', function (e) { e.preventDefault(); $(this).closest('.compose').toggleClass('minimize'); });

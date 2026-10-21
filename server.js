@@ -280,11 +280,14 @@ app.get('/api/sync', requireOwner, handle(async (req, res) => {
     mails: snap.docs.slice(0, limit).map((doc) => toFull(doc.id, doc.data(), folder)),
     hasMore: snap.docs.length > limit,
   };
-  if (folder === 'inbox' && req.query.reconcile) {
+  if (req.query.reconcile) {
     try {
-      const unread = db.collection('mails').where('read', '==', false);
-      out.unread = (await unread.count().get()).data().count;
-      out.unreadIds = out.unread <= 1000 ? (await unread.select().get()).docs.map((d) => d.id) : null;
+      out.total = (await db.collection(collection).count().get()).data().count;
+      if (folder === 'inbox') {
+        const unread = db.collection('mails').where('read', '==', false);
+        out.unread = (await unread.count().get()).data().count;
+        out.unreadIds = out.unread <= 1000 ? (await unread.select().get()).docs.map((d) => d.id) : null;
+      }
     } catch (err) { /* optional */ }
   }
   res.set('Cache-Control', 'no-store').json(out);
