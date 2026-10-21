@@ -79,6 +79,22 @@ const store = {
     const row = await store.get(folder, id);
     if (row) await store.put(folder, [{ ...row, ...fields }]);
   },
+  async remove(folder, id) { // after a delete
+    const d = await idb;
+    if (!d) { memMails.delete(folder + ':' + id); return; }
+    const t = d.transaction('mails', 'readwrite');
+    t.objectStore('mails').delete(folder + ':' + id);
+    return txDone(t);
+  },
+  async prune(folder, ids) { // drop saved mail that no longer exists on the server (deleted on another device)
+    const keep = new Set(ids);
+    const d = await idb;
+    if (!d) { memMails.forEach((r, k) => { if (r.folder === folder && !keep.has(r.id)) memMails.delete(k); }); return; }
+    const t = d.transaction('mails', 'readwrite');
+    const c = t.objectStore('mails').index('byDate').openCursor(bounds(folder));
+    c.onsuccess = () => { const cur = c.result; if (!cur) return; if (!keep.has(cur.value.id)) cur.delete(); cur.continue(); };
+    return txDone(t);
+  },
   async reconcile(unreadIds) { // make saved inbox read flags match the server
     const unread = new Set(unreadIds);
     const flip = (r) => (r.read === unread.has(r.id) ? { ...r, read: !unread.has(r.id) } : null);
@@ -212,7 +228,10 @@ function openApp(email) {
 async function start(user) {
   localStorage.setItem('mb_user', user.email || 'me');
   await openApp(user.email);
-  syncAll({ reconcile: true });
+  await syncAll({ reconcile: true });
+  initPush().catch(() => {});
+  const wanted = new URLSearchParams(location.search).get('mail'); // opened from a notification
+  if (wanted) { history.replaceState(null, '', location.pathname); openInboxMail(wanted); }
 }
 
 // ---------- list ----------
@@ -287,12 +306,14 @@ async function syncFolder(folder, reconcile) {
     if (d.mails.length) { fm.newest = Math.max(...times(d.mails)); fm.oldest = Math.min(...times(d.mails)); }
     fm.hasOlder = d.hasMore;
     takeTotal(d);
+    if (d.ids) await store.prune(folder, d.ids);
     if (!totalSet && !d.hasMore) fm.total = d.mails.length;
     if (folder === 'inbox') await applyReconcile(d);
   } else {
     for (let i = 0, rec = reconcile; i < 20; i++, rec = false) {
       const d = await api(`/api/sync?folder=${folder}&since=${fm.newest}&limit=50${rec ? '&reconcile=1' : ''}`);
       takeTotal(d);
+      if (d.ids) await store.prune(folder, d.ids);
       if (folder === 'inbox') await applyReconcile(d);
       if (!d.mails.length) break;
       if (!totalSet) added += d.mails.length;
@@ -415,6 +436,9 @@ function renderReader(m) {
   $('#rTo').text('to: ' + m.to.join(', '));
   $('#rTime').text(fullDate(m.date));
   $('#btnReplyTop, #btnReply').toggleClass('d-none', sent);
+  $('#mnReply, #mnUnread').toggleClass('d-none', sent);
+  const rUrl = resendUrl(m, state.folder);
+  $('#mnResend').toggleClass('d-none', !rUrl).attr('href', rUrl || '#');
   $('#rAttach').html((m.attachments || []).map((a) => `<span class="attach-chip"><i class="ri-attachment-2"></i> ${esc(a.filename)}${a.size ? ' (' + fmtSize(a.size) + ')' : ''}</span>`).join(''));
   renderBody(m);
   mc.update();
@@ -561,6 +585,145 @@ async function sendMail() {
   } catch (e) { toast(e.message); }
   $('#cSend').prop('disabled', false);
 }
+
+// ---------- message menu (three dots) ----------
+// Dashboard page of a message at Resend. A received mail's id is its Resend id; sent mail stores it as resendId.
+const resendUrl = (m, folder) => {
+  const id = folder === 'sent' ? m.resendId : m.id;
+  return id ? (folder === 'sent' ? 'https://resend.com/emails/' : 'https://resend.com/emails/receiving/') + encodeURIComponent(id) : null;
+};
+
+async function deleteMail() {
+  const m = state.openMail; const folder = state.folder;
+  if (!m) return;
+  if (!navigator.onLine) return toast('Go online to delete mail.');
+  if (!window.confirm('Delete this message permanently? It is removed from every device and cannot be recovered.')) return;
+  const row = await store.get(folder, m.id);
+  try {
+    await api(`/api/mails/${encodeURIComponent(m.id)}?folder=${folder}`, { method: 'DELETE' });
+  } catch (e) { return toast(e.message); }
+  await store.remove(folder, m.id);
+  if (meta[folder].total) meta[folder].total -= 1;
+  await saveMeta(folder);
+  if (folder === 'inbox') {
+    if (row && !row.read) meta.app.unread = Math.max(0, meta.app.unread - 1);
+    meta.app.pendingRead = meta.app.pendingRead.filter((x) => x !== m.id);
+    await saveMeta('app');
+  }
+  hideReader();
+  await showFolder();
+  toast('Deleted');
+}
+
+async function markUnread() {
+  const m = state.openMail;
+  if (!m || state.folder !== 'inbox') return;
+  if (!navigator.onLine) return toast('Go online to change this.');
+  const row = await store.get('inbox', m.id);
+  if (row && !row.read) return toast('Already unread');
+  try { await api(`/api/mails/${encodeURIComponent(m.id)}/unread`, { method: 'POST' }); } catch (e) { return toast(e.message); }
+  meta.app.pendingRead = meta.app.pendingRead.filter((x) => x !== m.id);
+  await store.patch('inbox', m.id, { read: false });
+  meta.app.unread += 1;
+  await saveMeta('app');
+  hideReader();
+  await showFolder();
+  toast('Marked as unread');
+}
+
+function startForward() {
+  const m = state.openMail;
+  if (!m) return;
+  openCompose({
+    subject: /^fwd?:/i.test(m.subject) ? m.subject : 'Fwd: ' + m.subject,
+    body: `\n\n---------- Forwarded message ----------\nFrom: ${m.from}\nDate: ${fullDate(m.date)}\nSubject: ${m.subject}\nTo: ${m.to.join(', ')}\n\n${plain(m).slice(0, 4000)}`,
+    title: 'Forward',
+  });
+}
+
+// Shares the message text with another app (phone share sheet); copies it where sharing is not available.
+// It is a copy of the text, not a public link: this mailbox is private.
+async function shareMail() {
+  const m = state.openMail;
+  if (!m) return;
+  const text = `${m.subject}\nFrom: ${m.from}\nDate: ${fullDate(m.date)}\n\n${plain(m).slice(0, 4000)}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: m.subject, text }); } catch (e) { /* cancelled */ }
+    return;
+  }
+  try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); } catch (e) { toast('Sharing is not available here'); }
+}
+
+$('#mnReply').on('click', (e) => { e.preventDefault(); startReply(); });
+$('#mnForward').on('click', (e) => { e.preventDefault(); startForward(); });
+$('#mnUnread').on('click', (e) => { e.preventDefault(); markUnread(); });
+$('#mnPrint').on('click', (e) => { e.preventDefault(); printMail(); });
+$('#mnShare').on('click', (e) => { e.preventDefault(); shareMail(); });
+$('#mnDelete').on('click', (e) => { e.preventDefault(); deleteMail(); });
+
+// ---------- push notifications ----------
+// The server sends a Web Push for each new mail; sw.js shows it. If the phone is offline the push
+// service holds it and delivers it when the phone reconnects.
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const b64ToBytes = (s) => {
+  const raw = atob((s + '='.repeat((4 - (s.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+};
+const bellState = (on) => {
+  const $b = $('#btnNotify').toggleClass('on', on).attr('title', on ? 'Notifications on (tap to turn off)' : 'Turn on notifications');
+  $b.find('i').attr('class', on ? 'ri-notification-3-fill' : 'ri-notification-off-line');
+};
+async function currentPush() {
+  const reg = await navigator.serviceWorker.ready;
+  return { reg, sub: await reg.pushManager.getSubscription() };
+}
+const subscribeNow = (reg) => reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(config.vapidPublicKey) });
+const savePushSub = (sub) => api('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub.toJSON() }) });
+
+async function initPush() { // after sign-in: show the bell and keep the saved subscription fresh
+  if (!pushSupported()) return;
+  $('#btnNotify').removeClass('d-none');
+  if (Notification.permission !== 'granted') return bellState(false);
+  const { reg, sub } = await currentPush();
+  const active = sub || (config.vapidPublicKey ? await subscribeNow(reg) : null);
+  if (active) await savePushSub(active);
+  bellState(Boolean(active));
+}
+
+async function togglePush() {
+  if (!pushSupported()) return toast('Push is not supported here. On iPhone, add the app to the Home Screen first.');
+  if (!navigator.onLine) return toast('Go online to change notifications.');
+  try {
+    const { reg, sub } = await currentPush();
+    if (sub) { // turn off
+      await api('/api/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }) });
+      await sub.unsubscribe();
+      bellState(false);
+      return toast('Notifications off');
+    }
+    if (!config.vapidPublicKey) return toast('Push is not set up on the server (VAPID keys missing).');
+    if ((await Notification.requestPermission()) !== 'granted') return toast('Notifications are blocked. Allow them in the app or site settings.');
+    await savePushSub(await subscribeNow(reg));
+    bellState(true);
+    await api('/api/push/test', { method: 'POST' }); // a notification should appear in a moment
+    return toast('Notifications on');
+  } catch (e) { return toast('Could not change notifications: ' + e.message); }
+}
+
+async function openInboxMail(id) {
+  if (state.folder !== 'inbox') $('#folders .nav-link[data-folder="inbox"]').trigger('click');
+  await syncAll();
+  openMail(id);
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => { // sent by sw.js
+    const d = e.data || {};
+    if (d.type === 'new-mail') syncAll();
+    if (d.type === 'open-mail' && d.id) openInboxMail(d.id);
+  });
+}
+$('#btnNotify').on('click', (e) => { e.preventDefault(); togglePush(); });
 
 // ---------- events ----------
 $('#mailGroup').on('click', '.mail-item', function (e) { e.preventDefault(); openMail(this.dataset.id); });

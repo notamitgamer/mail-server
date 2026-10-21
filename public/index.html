@@ -58,6 +58,7 @@
         <strong id="folderTitle" class="ps-2">Inbox</strong>
         <div class="ms-auto d-flex align-items-center">
           <span id="countText"></span>
+          <a href="#" id="btnNotify" class="pager d-none" title="Turn on notifications"><i class="ri-notification-off-line"></i></a>
           <a href="#" id="refresh" class="pager" title="Refresh"><i class="ri-refresh-line"></i></a>
         </div>
       </div>
@@ -69,7 +70,21 @@
       <div class="mailcontent-subject d-none">
         <nav class="nav">
           <a id="mailBack" href="#" class="nav-link" title="Back"><i class="ri-arrow-left-line"></i></a>
-          <a id="btnPdf" href="#" class="nav-link" title="Save as PDF"><i class="ri-file-pdf-line"></i></a>
+          <div class="dropdown">
+            <a href="#" id="btnMore" class="nav-link" data-bs-toggle="dropdown" aria-expanded="false" title="More" aria-label="More actions"><i class="ri-more-2-fill"></i></a>
+            <div class="dropdown-menu dropdown-menu-end">
+              <a id="mnReply" href="#" class="dropdown-item"><i class="ri-reply-line"></i> Reply</a>
+              <a id="mnForward" href="#" class="dropdown-item"><i class="ri-share-forward-line"></i> Forward</a>
+              <a id="mnUnread" href="#" class="dropdown-item"><i class="ri-mail-unread-line"></i> Mark as unread</a>
+              <div class="dropdown-divider"></div>
+              <a id="btnPdf" href="#" class="dropdown-item"><i class="ri-file-pdf-line"></i> Save as PDF</a>
+              <a id="mnPrint" href="#" class="dropdown-item"><i class="ri-printer-line"></i> Print</a>
+              <a id="mnShare" href="#" class="dropdown-item"><i class="ri-share-line"></i> Share</a>
+              <a id="mnResend" href="#" class="dropdown-item" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> Open in Resend</a>
+              <div class="dropdown-divider"></div>
+              <a id="mnDelete" href="#" class="dropdown-item text-danger"><i class="ri-delete-bin-line"></i> Delete</a>
+            </div>
+          </div>
         </nav>
         <h4 id="rSubject"></h4>
       </div>

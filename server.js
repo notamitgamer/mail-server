@@ -4,6 +4,8 @@ const { Resend } = require('resend');
 const { Webhook } = require('svix');
 const { simpleParser } = require('mailparser');
 const admin = require('firebase-admin');
+const crypto = require('crypto');
+const webpush = require('web-push');
 
 const app = express();
 
@@ -15,6 +17,28 @@ const port = process.env.PORT || 3000;
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+
+// ---- Web Push (new-mail notifications) --------------------------------------
+// Create the keys once with `npx web-push generate-vapid-keys`, then set
+// VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY. Without them mail still arrives; only the push is skipped.
+let pushEnabled = false;
+try {
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    const contact = (process.env.ALLOWED_ALIASES || '').split(',')[0].trim() || 'admin@example.com';
+    webpush.setVapidDetails(
+      process.env.VAPID_SUBJECT || `mailto:${contact}`,
+      process.env.VAPID_PUBLIC_KEY.trim(),
+      process.env.VAPID_PRIVATE_KEY.trim()
+    );
+    pushEnabled = true;
+  } else {
+    console.warn('VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY not set - push notifications are off');
+  }
+} catch (err) {
+  console.error('Web Push init failed - push notifications are off:', err.message);
+}
+// How long the push service keeps an undelivered push (a phone that is offline gets it on reconnect).
+const PUSH_TTL = 7 * 24 * 3600;
 
 // Plain-text version of an HTML body (used for snippets and the text part of sent mail).
 const htmlToText = (html) =>
@@ -55,7 +79,7 @@ const capBody = (value) => (value ? value.slice(0, MAX_BODY_CHARS) : null);
 // Save one received mail, keyed by Resend's email ID. create() fails if the
 // document exists, so a webhook retry never duplicates it or resets `read`.
 const archiveEmail = async ({ emailId, from, to, subject, receivedAt, parsed, fetchError }) => {
-  if (!db) return;
+  if (!db) return false;
   try {
     await db.collection('mails').doc(emailId).create({
       from,
@@ -78,10 +102,47 @@ const archiveEmail = async ({ emailId, from, to, subject, receivedAt, parsed, fe
       })),
       fetchError: fetchError || null,
     });
+    return true; // newly saved
   } catch (err) {
-    if (err.code === 6 || /already exists/i.test(err.message)) return; // retry of a mail we already saved
+    if (err.code === 6 || /already exists/i.test(err.message)) return false; // retry of a mail we already saved
     throw err;
   }
+};
+
+// ---- Push delivery ----------------------------------------------------------
+const pushHash = (endpoint) => crypto.createHash('sha256').update(endpoint).digest('hex');
+
+// Send one payload to every saved device. Never throws: a push problem must not make
+// the webhook answer 500, because Resend would retry and the mail would be pushed twice.
+const pushToAll = async (payload) => {
+  if (!db || !pushEnabled) return 0;
+  let sent = 0;
+  try {
+    const subs = await db.collection('pushSubs').get();
+    const body = JSON.stringify(payload);
+    await Promise.all(subs.docs.map(async (doc) => {
+      try {
+        await webpush.sendNotification(doc.data().subscription, body, { TTL: PUSH_TTL, urgency: 'high', timeout: 8000 });
+        sent++;
+      } catch (err) {
+        if (err.statusCode === 404 || err.statusCode === 410) await doc.ref.delete().catch(() => {}); // device is gone
+        else console.error('Push failed:', err.statusCode || '', err.body || err.message);
+      }
+    }));
+  } catch (err) {
+    console.error('Push error:', err.message);
+  }
+  return sent;
+};
+
+const sendPush = ({ emailId, from, subject, snippet }) => {
+  const m = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/.exec(from || '');
+  const sender = (m ? m[1].trim() || m[2].trim() : String(from || '')).slice(0, 100);
+  return pushToAll({
+    title: sender || 'New mail',
+    body: (subject + (snippet ? ' - ' + snippet : '')).slice(0, 200),
+    id: emailId,
+  });
 };
 
 // Resend's email.received webhook only carries metadata (no body, headers or
@@ -144,7 +205,7 @@ app.post('/api/incoming', express.text({ type: 'application/json' }), async (req
       return res.status(500).json({ error: 'Storage not configured' });
     }
     const parsed = await fetchFullEmail(emailData.email_id);
-    await archiveEmail({
+    const isNew = await archiveEmail({
       emailId: emailData.email_id,
       from: originalSender,
       to: originalRecipient,
@@ -152,6 +213,8 @@ app.post('/api/incoming', express.text({ type: 'application/json' }), async (req
       receivedAt,
       parsed,
     });
+    // Push only for a mail that was newly saved, so a webhook retry does not notify twice.
+    if (isNew) await sendPush({ emailId: emailData.email_id, from: originalSender, subject, snippet: makeSnippet(parsed) });
     return res.status(200).json({ success: true });
 
   } catch (error) {
@@ -204,6 +267,7 @@ const toSummary = (id, d, folder) => ({
   subject: d.subject || '(no subject)',
   snippet: d.snippet || '',
   date: (d[FOLDERS[folder].dateField]?.toDate?.() || new Date()).toISOString(),
+  resendId: d.resendId || null, // sent mail only; a received mail's document id already is its Resend id
   read: d.read !== false,
   attachmentCount: (d.attachments || []).length,
 });
@@ -220,7 +284,7 @@ const toFull = (id, d, folder) => ({
 app.get('/api/config', (req, res) => {
   let firebase = null;
   try { firebase = JSON.parse(process.env.FIREBASE_WEB_CONFIG || 'null'); } catch (err) { /* ignore */ }
-  res.json({ firebase, aliases: SEND_ALIASES, fromName: FROM_NAME });
+  res.json({ firebase, aliases: SEND_ALIASES, fromName: FROM_NAME, vapidPublicKey: pushEnabled ? process.env.VAPID_PUBLIC_KEY.trim() : null });
 });
 
 app.get('/api/mails', requireOwner, handle(async (req, res) => {
@@ -283,6 +347,8 @@ app.get('/api/sync', requireOwner, handle(async (req, res) => {
   if (req.query.reconcile) {
     try {
       out.total = (await db.collection(collection).count().get()).data().count;
+      // All ids, so a device can drop mail that was deleted somewhere else.
+      out.ids = out.total <= 2000 ? (await db.collection(collection).select().get()).docs.map((d) => d.id) : null;
       if (folder === 'inbox') {
         const unread = db.collection('mails').where('read', '==', false);
         out.unread = (await unread.count().get()).data().count;
@@ -301,6 +367,24 @@ app.post('/api/mails/:id/read', requireOwner, handle(async (req, res) => {
     if (err.code === 5) return res.status(404).json({ error: 'Not found' });
     throw err;
   }
+  return res.json({ ok: true });
+}));
+
+app.post('/api/mails/:id/unread', requireOwner, handle(async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  try {
+    await db.collection('mails').doc(req.params.id).update({ read: false });
+  } catch (err) {
+    if (err.code === 5) return res.status(404).json({ error: 'Not found' });
+    throw err;
+  }
+  return res.json({ ok: true });
+}));
+
+// Permanently deletes one message (inbox or sent) from Firestore.
+app.delete('/api/mails/:id', requireOwner, handle(async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  await db.collection(FOLDERS[folderOf(req)].collection).doc(req.params.id).delete(); // deleting a missing doc is fine
   return res.json({ ok: true });
 }));
 
@@ -363,6 +447,34 @@ app.post('/api/send', requireOwner, express.json({ limit: '2mb' }), handle(async
     attachments: [],
   });
   return res.json({ ok: true, id: ref.id });
+}));
+
+// ---- Push subscriptions (one document per browser or phone) ------------------
+app.post('/api/push/subscribe', requireOwner, express.json({ limit: '10kb' }), handle(async (req, res) => {
+  const sub = req.body && req.body.subscription;
+  const valid = sub && typeof sub.endpoint === 'string' && /^https:\/\//.test(sub.endpoint) && sub.endpoint.length < 2048
+    && sub.keys && typeof sub.keys.p256dh === 'string' && typeof sub.keys.auth === 'string';
+  if (!valid) return res.status(400).json({ error: 'Bad subscription' });
+  await db.collection('pushSubs').doc(pushHash(sub.endpoint)).set({
+    subscription: { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } },
+    userAgent: String(req.headers['user-agent'] || '').slice(0, 200),
+    updatedAt: admin.firestore.Timestamp.now(),
+  });
+  return res.json({ ok: true, push: pushEnabled });
+}));
+
+app.post('/api/push/unsubscribe', requireOwner, express.json({ limit: '10kb' }), handle(async (req, res) => {
+  const endpoint = req.body && req.body.endpoint;
+  if (typeof endpoint !== 'string' || !endpoint) return res.status(400).json({ error: 'Bad endpoint' });
+  await db.collection('pushSubs').doc(pushHash(endpoint)).delete();
+  return res.json({ ok: true });
+}));
+
+// Sends a test notification to every saved device.
+app.post('/api/push/test', requireOwner, handle(async (req, res) => {
+  if (!pushEnabled) return res.status(503).json({ error: 'Push is not configured (VAPID keys missing)' });
+  const sent = await pushToAll({ title: 'Notifications are on', body: 'You will be notified when new mail arrives.', id: null });
+  return res.json({ ok: true, sent });
 }));
 
 app.get('/ping', (req, res) => {

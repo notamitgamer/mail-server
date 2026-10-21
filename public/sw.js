@@ -1,6 +1,6 @@
 // Service worker: keeps the app itself (shell + Firebase sign-in code) available offline.
 // Your mail is NOT stored here; app.js keeps it in IndexedDB. Bump CACHE when shipping changes to cached files.
-const CACHE = 'mail-shell-v6';
+const CACHE = 'mail-shell-v8';
 const SHELL = [
   '/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png',
   '/assets/css/style.min.css', '/assets/css/app.css', '/assets/js/app.js',
@@ -56,4 +56,38 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   event.respondWith(staleWhileRevalidate(req));
+});
+
+// ---- Push: the server sends one for each new mail. The push service holds it while the phone is
+// offline and delivers it on reconnect, even if the app is closed. ----
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch (e) { d = { body: event.data ? event.data.text() : '' }; }
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (d.id && wins.some((c) => c.visibilityState === 'visible')) { // app is on screen: just refresh it
+      wins.forEach((c) => c.postMessage({ type: 'new-mail' }));
+      return;
+    }
+    await self.registration.showNotification(d.title || 'New mail', {
+      body: d.body || '',
+      icon: '/icons/icon-192.png',
+      tag: d.id ? 'mail-' + d.id : 'mail-test',
+      data: { id: d.id || null },
+    });
+  })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const id = event.notification.data && event.notification.data.id;
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (wins.length) {
+      await wins[0].focus().catch(() => {});
+      if (id) wins[0].postMessage({ type: 'open-mail', id });
+      return;
+    }
+    await self.clients.openWindow(id ? '/?mail=' + encodeURIComponent(id) : '/');
+  })());
 });
