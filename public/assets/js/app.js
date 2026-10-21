@@ -79,11 +79,14 @@ function start(user) {
 }
 
 // ---------- list ----------
-const COLORS = ['', 'green', 'blue', 'indigo', 'red', 'yellow'];
+const COLORS = ['green', 'blue', 'indigo', 'red', 'yellow'];
+function colorOf(who) {
+  let h = 0;
+  for (const c of label(who)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return COLORS[h % COLORS.length];
+}
 function avatar(who) {
-  const l = label(who); let h = 0;
-  for (const c of l) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return `<div class="mail-avatar"><span class="${COLORS[h % COLORS.length]}">${esc(l.charAt(0).toLowerCase())}</span></div>`;
+  return `<div class="mail-avatar"><span class="${colorOf(who)}">${esc(label(who).charAt(0).toLowerCase())}</span></div>`;
 }
 
 function setUnread(n) {
@@ -163,7 +166,8 @@ function renderReader(m) {
   const sent = state.folder === 'sent';
   const p = parseAddr(m.from);
   $('#rSubject').text(m.subject);
-  $('#rAvatar').text(label(sent ? m.to[0] : m.from).charAt(0).toLowerCase());
+  const who = sent ? m.to[0] : m.from;
+  $('#rAvatar').attr('class', colorOf(who)).text(label(who).charAt(0).toLowerCase());
   $('#rFrom').html(sent ? `Me <span>&lt;${esc(m.from)}&gt;</span>` : `${esc(p.name || p.addr)}${p.name ? ` <span>&lt;${esc(p.addr)}&gt;</span>` : ''}`);
   $('#rTo').text('to: ' + m.to.join(', '));
   $('#rTime').text(fullDate(m.date));
