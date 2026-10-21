@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <meta name="theme-color" content="#0168fa">
+    <meta name="theme-color" content="#1e1e2e">
     <meta name="robots" content="noindex">
     <title>Mail</title>
     <link rel="manifest" href="/manifest.webmanifest">
@@ -20,6 +20,14 @@
         <h3><strong>Mail</strong>box</h3>
         <p id="signinMsg" class="text-muted">Loading&hellip;</p>
         <button id="btnSignin" type="button" class="btn btn-primary d-none"><i class="ri-google-fill me-1"></i> Sign in with Google</button>
+        <div class="signin-note">
+          <p><strong>Private mailbox.</strong> Only the owner is allowed to sign in, so you can&rsquo;t get in. You can try, but other accounts will be turned away.</p>
+          <p>Page not loading or sign-in stuck? Open <a href="/ping" target="_blank" rel="noopener">/ping</a> to check whether the server is awake. It should say &ldquo;Server is awake!&rdquo; (it can take up to a minute to wake up).</p>
+        </div>
+        <footer class="signin-credit">
+          <p>Mailbox UI built on <a href="https://github.com/themepixels/smartmail" target="_blank" rel="noopener">SmartMail</a> by ThemePixels (MIT licence).<br>Edited and maintained by <a href="https://github.com/notamitgamer" target="_blank" rel="noopener">notamitgamer</a>.</p>
+          <p>&copy; 2026&ndash;present notamitgamer &middot; mail.amit.is-a.dev</p>
+        </footer>
       </div>
     </div>
 
@@ -30,8 +38,8 @@
       <div class="sidebar-body">
         <label class="sidebar-label">Mailboxes</label>
         <nav class="nav flex-column mb-5" id="folders">
-          <a href="#" class="nav-link active" data-folder="inbox"><i class="ri-inbox-line"></i> <span>Inbox</span> <small id="unreadCount"></small></a>
-          <a href="#" class="nav-link" data-folder="sent"><i class="ri-send-plane-2-line"></i> <span>Sent</span></a>
+          <a href="#" class="nav-link active" data-folder="inbox"><i class="ri-inbox-line"></i> <span>Inbox</span> <small id="unreadCount"></small><small id="totalInbox" class="total"></small></a>
+          <a href="#" class="nav-link" data-folder="sent"><i class="ri-send-plane-2-line"></i> <span>Sent</span> <small id="totalSent" class="total"></small></a>
         </nav>
       </div>
     </div>
@@ -61,7 +69,7 @@
       <div class="mailcontent-subject d-none">
         <nav class="nav">
           <a id="mailBack" href="#" class="nav-link" title="Back"><i class="ri-arrow-left-line"></i></a>
-          <a id="btnPdf" href="#" class="nav-link" title="Save as PDF"><i class="ri-file-pdf-2-line"></i></a>
+          <a id="btnPdf" href="#" class="nav-link" title="Save as PDF"><i class="ri-file-pdf-line"></i></a>
         </nav>
         <h4 id="rSubject"></h4>
       </div>

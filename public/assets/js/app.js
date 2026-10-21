@@ -2,7 +2,7 @@
 const $ = window.jQuery;
 const FIREBASE_VER = '11.10.0';
 
-const state = { folder: 'inbox', mails: [], hasMore: false, loading: false, openId: null, openMail: null, unread: 0 };
+const state = { folder: 'inbox', mails: [], hasMore: false, loading: false, shown: 30, openId: null, openMail: null, unread: 0 };
 let config = { aliases: [], fromName: '' };
 let getToken = async () => { throw new Error('Not signed in'); };
 let signOutFn = async () => {};
@@ -31,11 +31,107 @@ const toast = (msg) => {
 };
 const plain = (m) => (m.text || (m.html ? (new DOMParser().parseFromString(m.html, 'text/html').body.textContent || '') : '')).trim();
 
+// ---------- offline store (IndexedDB) ----------
+// Mail is kept on this device, like Gmail's offline mode. IndexedDB instead of localStorage:
+// localStorage is capped near 5 MB and blocks the page, and HTML mail outgrows it quickly.
+const PAGE = 30;
+const idb = new Promise((resolve) => {
+  if (!window.indexedDB) return resolve(null);
+  const r = indexedDB.open('mailbox', 1);
+  r.onupgradeneeded = () => {
+    const d = r.result;
+    d.createObjectStore('mails', { keyPath: 'key' }).createIndex('byDate', ['folder', 'ts']);
+    d.createObjectStore('meta');
+  };
+  r.onsuccess = () => resolve(r.result);
+  r.onerror = () => resolve(null);
+});
+const memMails = new Map(); const memMeta = new Map(); // used only if IndexedDB is unavailable (this session)
+const req2p = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const txDone = (t) => new Promise((res, rej) => { t.oncomplete = () => res(); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); });
+const bounds = (folder) => IDBKeyRange.bound([folder, 0], [folder, Number.MAX_SAFE_INTEGER]);
+
+const store = {
+  async put(folder, mails) {
+    const rows = mails.map((m) => ({ ...m, folder, key: folder + ':' + m.id, ts: Date.parse(m.date) }));
+    const d = await idb;
+    if (!d) return rows.forEach((r) => memMails.set(r.key, r));
+    const t = d.transaction('mails', 'readwrite');
+    rows.forEach((r) => t.objectStore('mails').put(r));
+    return txDone(t);
+  },
+  async get(folder, id) {
+    const d = await idb;
+    if (!d) return memMails.get(folder + ':' + id) || null;
+    return (await req2p(d.transaction('mails').objectStore('mails').get(folder + ':' + id))) || null;
+  },
+  async list(folder, limit) { // newest first
+    const d = await idb;
+    if (!d) return [...memMails.values()].filter((r) => r.folder === folder).sort((a, b) => b.ts - a.ts).slice(0, limit);
+    return new Promise((resolve, reject) => {
+      const out = [];
+      const c = d.transaction('mails').objectStore('mails').index('byDate').openCursor(bounds(folder), 'prev');
+      c.onsuccess = () => { const cur = c.result; if (cur && out.length < limit) { out.push(cur.value); cur.continue(); } else resolve(out); };
+      c.onerror = () => reject(c.error);
+    });
+  },
+  async patch(folder, id, fields) {
+    const row = await store.get(folder, id);
+    if (row) await store.put(folder, [{ ...row, ...fields }]);
+  },
+  async reconcile(unreadIds) { // make saved inbox read flags match the server
+    const unread = new Set(unreadIds);
+    const flip = (r) => (r.read === unread.has(r.id) ? { ...r, read: !unread.has(r.id) } : null);
+    const d = await idb;
+    if (!d) { memMails.forEach((r, k) => { if (r.folder === 'inbox') { const n = flip(r); if (n) memMails.set(k, n); } }); return; }
+    const t = d.transaction('mails', 'readwrite');
+    const c = t.objectStore('mails').index('byDate').openCursor(bounds('inbox'));
+    c.onsuccess = () => { const cur = c.result; if (!cur) return; const n = flip(cur.value); if (n) cur.update(n); cur.continue(); };
+    return txDone(t);
+  },
+  async getMeta(k) {
+    const d = await idb;
+    if (!d) return memMeta.get(k) ?? null;
+    return (await req2p(d.transaction('meta').objectStore('meta').get(k))) ?? null;
+  },
+  async setMeta(k, v) {
+    const d = await idb;
+    if (!d) { memMeta.set(k, v); return; }
+    const t = d.transaction('meta', 'readwrite');
+    t.objectStore('meta').put(v, k);
+    return txDone(t);
+  },
+  async clear() {
+    memMails.clear(); memMeta.clear();
+    const d = await idb;
+    if (!d) return;
+    const t = d.transaction(['mails', 'meta'], 'readwrite');
+    t.objectStore('mails').clear(); t.objectStore('meta').clear();
+    return txDone(t);
+  },
+};
+
+// Per-folder sync cursor ({ newest, oldest, hasOlder } as ms timestamps) and app-level bits.
+const fresh = () => ({ inbox: {}, sent: {}, app: { unread: 0, pendingRead: [], lastSync: 0 } });
+let meta = fresh();
+const saveMeta = (k) => store.setMeta(k, meta[k]);
+async function loadMeta() {
+  const base = fresh();
+  for (const k of Object.keys(base)) meta[k] = { ...base[k], ...((await store.getMeta(k)) || {}) };
+}
+
 // ---------- sign-in ----------
 function showSignin(msg, button) {
   $('#signin').removeClass('d-none');
   $('#signinMsg').text(msg);
   $('#btnSignin').toggleClass('d-none', !button);
+}
+
+async function wipeLocal() { // sign-out, or a different/blocked account: nothing stays on this device
+  localStorage.removeItem('mb_user');
+  await store.clear();
+  meta = fresh(); appReady = null; state.mails = []; state.hasMore = false; state.shown = PAGE;
+  hideReader(); setUnread(0); renderList();
 }
 
 async function api(path, opts = {}) {
@@ -49,33 +145,74 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     const err = new Error((data && data.error) || res.statusText);
     err.status = res.status;
-    if (res.status === 403) { await signOutFn(); showSignin(err.message, true); }
+    if (res.status === 403) { await signOutFn(); await wipeLocal(); showSignin(err.message, true); }
     throw err;
   }
   return data;
 }
 
-async function boot() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-  try {
-    config = await (await fetch('/api/config')).json();
-  } catch (e) { return showSignin('Cannot reach the server.', false); }
-  if (!config.firebase) return showSignin('FIREBASE_WEB_CONFIG is not set on the server.', false);
-  try {
+async function fetchConfig() {
+  const c = await (await fetch('/api/config')).json();
+  if (c.firebase) localStorage.setItem('mb_config', JSON.stringify(c)); // so the next start needs no server round trip
+  return c;
+}
+
+let authUser = null; let authReady = null; let appReady = null;
+function initAuth() {
+  if (authReady) return authReady;
+  authReady = (async () => {
     const base = `https://www.gstatic.com/firebasejs/${FIREBASE_VER}`;
     const [{ initializeApp }, fa] = await Promise.all([import(`${base}/firebase-app.js`), import(`${base}/firebase-auth.js`)]);
     const auth = fa.getAuth(initializeApp(config.firebase));
     getToken = () => auth.currentUser.getIdToken();
     signOutFn = () => fa.signOut(auth);
-    $('#btnSignin').on('click', () => fa.signInWithPopup(auth, new fa.GoogleAuthProvider()).catch((e) => showSignin('Sign-in failed: ' + e.message, true)));
-    fa.onAuthStateChanged(auth, (user) => (user ? start(user) : showSignin('Sign in to continue', true)));
-  } catch (e) { showSignin('Could not load sign-in. Are you offline?', false); }
+    $('#btnSignin').off('click').on('click', () => fa.signInWithPopup(auth, new fa.GoogleAuthProvider()).catch((e) => showSignin('Sign-in failed: ' + e.message, true)));
+    fa.onAuthStateChanged(auth, (user) => {
+      authUser = user;
+      if (user) start(user);
+      else if (navigator.onLine) { wipeLocal(); showSignin('Sign in to continue', true); }
+    });
+  })();
+  authReady.catch(() => { authReady = null; });
+  return authReady;
 }
 
-function start(user) {
-  $('#signin').addClass('d-none');
-  $('#avatar span').text((user.email || 'm').charAt(0).toLowerCase());
-  loadList(true);
+async function boot() {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); // ask the browser not to evict saved mail
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('mb_config')); } catch (e) { /* ignore */ }
+  const hint = localStorage.getItem('mb_user');
+
+  if (saved && saved.firebase) {
+    // Known device: paint saved mail now, then bring up Firebase and the server in the background.
+    config = saved;
+    if (hint) openApp(hint);
+    initAuth().catch(() => { if (!hint) showSignin('Could not load sign-in. Are you offline?', false); });
+    fetchConfig().then((c) => { config = c; }).catch(() => {});
+    return;
+  }
+  try { config = await fetchConfig(); } catch (e) { return showSignin('Cannot reach the server.', false); }
+  if (!config.firebase) return showSignin('FIREBASE_WEB_CONFIG is not set on the server.', false);
+  initAuth().catch(() => showSignin('Could not load sign-in. Are you offline?', false));
+}
+
+function openApp(email) {
+  if (appReady) return appReady;
+  appReady = (async () => {
+    $('#signin').addClass('d-none');
+    $('#avatar span').text((email || 'm').charAt(0).toLowerCase());
+    await loadMeta();
+    state.loading = !meta.inbox.newest; // nothing saved yet: say "Loading…" until the first sync lands
+    await showFolder();
+  })();
+  return appReady;
+}
+
+async function start(user) {
+  localStorage.setItem('mb_user', user.email || 'me');
+  await openApp(user.email);
+  syncAll({ reconcile: true });
 }
 
 // ---------- list ----------
@@ -109,40 +246,144 @@ function renderList() {
       + `<h6 class="mail-subject">${esc(m.subject)}</h6><p class="mail-text">${esc(m.snippet)}</p></div></li>`);
   });
   if (state.hasMore && !q) $ul.append('<li class="load-more"><button id="loadMore" class="btn btn-sm btn-outline-primary">Load more</button></li>');
-  $('#countText').text(state.mails.length ? `${state.mails.length} loaded` : '');
+  renderStatus();
   ps.update();
 }
 
-async function loadList(reset) {
-  if (state.loading) return;
-  state.loading = true;
-  if (reset) { state.mails = []; state.hasMore = false; renderList(); }
-  try {
-    const last = state.mails[state.mails.length - 1];
-    const before = !reset && last ? '&before=' + new Date(last.date).getTime() : '';
-    const data = await api(`/api/mails?folder=${state.folder}&limit=30${before}`);
-    state.mails = reset ? data.mails : state.mails.concat(data.mails);
-    state.hasMore = data.hasMore;
-    if (data.unread !== null && data.unread !== undefined) setUnread(data.unread);
-  } catch (e) { toast(e.message); }
-  state.loading = false;
+function renderStatus() {
+  const n = state.mails.length; const total = meta[state.folder].total;
+  $('#countText').text((navigator.onLine ? '' : 'Offline · ') + (n ? (total ? `${n} of ${total}` : `${n} saved`) : ''));
+  $('#totalInbox').text(meta.inbox.total || '');
+  $('#totalSent').text(meta.sent.total || '');
+}
+
+// Draw the list from what is saved on this device. Never waits on the network.
+async function showFolder() {
+  const f = state.folder;
+  const rows = await store.list(f, state.shown + 1);
+  if (f !== state.folder) return;
+  state.mails = rows.slice(0, state.shown);
+  state.hasMore = rows.length > state.shown || Boolean(meta[f].hasOlder);
+  setUnread(meta.app.unread);
   renderList();
+}
+
+// ---------- sync ----------
+// Only the gap is requested: mail newer than the newest one already saved. A full load happens once per device.
+async function syncFolder(folder, reconcile) {
+  const fm = meta[folder];
+  const times = (mails) => mails.map((m) => Date.parse(m.date));
+  let counted = false; let newUnread = 0; let added = 0; let totalSet = false;
+  const takeTotal = (d) => { if (d.total !== undefined) { fm.total = d.total; totalSet = true; } };
+  const applyReconcile = async (d) => {
+    if (d.unread === undefined) return;
+    meta.app.unread = d.unread; counted = true;
+    if (d.unreadIds) await store.reconcile(d.unreadIds);
+  };
+
+  if (!fm.newest) {
+    const d = await api(`/api/sync?folder=${folder}&limit=${PAGE}${reconcile ? '&reconcile=1' : ''}`);
+    await store.put(folder, d.mails);
+    if (d.mails.length) { fm.newest = Math.max(...times(d.mails)); fm.oldest = Math.min(...times(d.mails)); }
+    fm.hasOlder = d.hasMore;
+    takeTotal(d);
+    if (!totalSet && !d.hasMore) fm.total = d.mails.length;
+    if (folder === 'inbox') await applyReconcile(d);
+  } else {
+    for (let i = 0, rec = reconcile; i < 20; i++, rec = false) {
+      const d = await api(`/api/sync?folder=${folder}&since=${fm.newest}&limit=50${rec ? '&reconcile=1' : ''}`);
+      takeTotal(d);
+      if (folder === 'inbox') await applyReconcile(d);
+      if (!d.mails.length) break;
+      if (!totalSet) added += d.mails.length;
+      await store.put(folder, d.mails);
+      fm.newest = Math.max(fm.newest, ...times(d.mails));
+      newUnread += d.mails.filter((m) => !m.read).length;
+      if (!d.hasMore) break;
+    }
+  }
+  if (folder === 'inbox' && !counted) meta.app.unread += newUnread;
+  if (!totalSet && added) fm.total = (fm.total || 0) + added;
+  await saveMeta(folder);
+  if (folder === 'inbox') await saveMeta('app');
+}
+
+async function flushReads() { // reads made offline are sent once we are back
+  const ids = [...meta.app.pendingRead];
+  for (const id of ids) {
+    try { await api(`/api/mails/${encodeURIComponent(id)}/read`, { method: 'POST' }); } catch (e) { if (e.status !== 404) throw e; }
+    meta.app.pendingRead = meta.app.pendingRead.filter((x) => x !== id);
+  }
+  if (ids.length) await saveMeta('app');
+}
+
+let syncing = false;
+async function syncAll({ reconcile = false, manual = false } = {}) {
+  if (syncing || !authUser) return;
+  if (!navigator.onLine) { if (manual) toast('You are offline. Showing saved mail.'); return; }
+  syncing = true; $('#refresh i').addClass('spin');
+  try {
+    await appReady;
+    await flushReads();
+    const folders = reconcile ? ['inbox', 'sent'] : ['inbox'].concat(state.folder === 'sent' ? ['sent'] : []);
+    for (const f of folders) await syncFolder(f, reconcile);
+    meta.app.lastSync = Date.now(); await saveMeta('app');
+  } catch (e) { if (manual || navigator.onLine) toast(e.status ? e.message : 'Could not sync. Showing saved mail.'); }
+  syncing = false; state.loading = false; $('#refresh i').removeClass('spin');
+  await showFolder();
+}
+
+async function loadMore() {
+  const f = state.folder;
+  state.shown += PAGE;
+  await showFolder();
+  if (state.mails.length >= state.shown || !meta[f].hasOlder) return; // saved mail was enough
+  if (!navigator.onLine) return toast('You are offline. Older mail will load when you reconnect.');
+  try { // older than the oldest saved mail
+    const d = await api(`/api/sync?folder=${f}&before=${meta[f].oldest}&limit=${PAGE}`);
+    await store.put(f, d.mails);
+    if (d.mails.length) meta[f].oldest = Math.min(meta[f].oldest, ...d.mails.map((m) => Date.parse(m.date)));
+    meta[f].hasOlder = d.hasMore;
+    await saveMeta(f);
+  } catch (e) { toast(e.message); }
+  await showFolder();
 }
 
 // ---------- reader ----------
 const CLEAN = { WHOLE_DOCUMENT: true, FORBID_TAGS: ['meta', 'base', 'link', 'form', 'iframe', 'object', 'embed', 'script'] };
-const FRAME_HEAD = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src https: data:"><base target="_blank">`
-  + '<style>html{background:#fff}body{margin:0;padding:12px 4px;font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#202124;word-wrap:break-word;overflow-x:auto}img{max-width:100%;height:auto}</style>';
+const FRAME_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src https: data:"><base target="_blank">`;
+const FRAME_BASE = 'body{margin:0;padding:12px 4px;font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;word-wrap:break-word;overflow-x:auto}img{max-width:100%;height:auto}';
+const FRAME_LIGHT = `${FRAME_CSP}<style>html{background:#fff}${FRAME_BASE}body{color:#202124}a{color:#1a56db}</style>`;
+const FRAME_DARK = `${FRAME_CSP}<style>html{background:transparent}${FRAME_BASE}body{color:#cdd6f4}a{color:#89b4fa}</style>`;
+
+// Phone back button / swipe: the reader and the sidebar are "layers" with their own history entry,
+// so back closes the layer instead of leaving the site.
+const layers = []; let ignorePop = 0;
+function pushLayer(name) { layers.push(name); history.pushState({ mb: name }, ''); }
+function closeLayer(name) {
+  $('body').removeClass(name === 'mail' ? 'mailcontent-show' : 'sidebar-show');
+  const i = layers.lastIndexOf(name);
+  if (i >= 0 && i === layers.length - 1) { layers.pop(); ignorePop++; history.back(); } else if (i >= 0) layers.splice(i, 1);
+}
+window.addEventListener('popstate', () => {
+  if (ignorePop) { ignorePop--; return; }
+  const name = layers.pop();
+  if (!name || name === 'mail') $('body').removeClass('mailcontent-show');
+  if (!name || name === 'side') $('body').removeClass('sidebar-show');
+});
 
 function showReader() {
   $('.mailcontent-placeholder').addClass('d-none').siblings().removeClass('d-none');
-  if (window.matchMedia('(max-width: 1199px)').matches) $('body').addClass('mailcontent-show');
+  if (window.matchMedia('(max-width: 1199px)').matches && !$('body').hasClass('mailcontent-show')) {
+    $('body').addClass('mailcontent-show');
+    pushLayer('mail');
+  }
 }
 
 function hideReader() {
   state.openId = null; state.openMail = null;
   $('.mailcontent-placeholder').removeClass('d-none').siblings().addClass('d-none');
-  $('body').removeClass('mailcontent-show');
+  closeLayer('mail');
 }
 
 function renderBody(m) {
@@ -153,7 +394,9 @@ function renderBody(m) {
   // Scripts stay off; same-origin is only so we can measure the height.
   frame.setAttribute('sandbox', 'allow-same-origin allow-popups allow-popups-to-escape-sandbox');
   frame.setAttribute('referrerpolicy', 'no-referrer');
-  frame.srcdoc = /<head[^>]*>/i.test(doc) ? doc.replace(/<head[^>]*>/i, (t) => t + FRAME_HEAD) : FRAME_HEAD + doc;
+  const fh = m.html ? FRAME_LIGHT : FRAME_DARK;
+  frame.className = m.html ? 'frame-light' : 'frame-dark';
+  frame.srcdoc = /<head[^>]*>/i.test(doc) ? doc.replace(/<head[^>]*>/i, (t) => t + fh) : fh + doc;
   frame.addEventListener('load', () => {
     try { frame.style.height = frame.contentDocument.documentElement.scrollHeight + 'px'; } catch (e) { /* ignore */ }
     mc.update();
@@ -178,27 +421,91 @@ function renderReader(m) {
 }
 
 async function openMail(id) {
+  const folder = state.folder;
   state.openId = id;
   $('#mailGroup .mail-item').removeClass('active').filter((i, el) => el.dataset.id === id).addClass('active');
   showReader();
   $('#rSubject').text('Loading…'); $('#rBody').empty(); $('#rAttach').empty();
-  try {
-    const m = await api(`/api/mails/${encodeURIComponent(id)}?folder=${state.folder}`);
-    if (state.openId !== id) return;
-    state.openMail = m;
-    renderReader(m);
+  const m = await store.get(folder, id);
+  if (state.openId !== id) return;
+  if (!m) { $('#rSubject').text(''); return toast('This message is not saved on this device yet.'); }
+  state.openMail = m;
+  renderReader(m);
+  if (folder === 'inbox' && !m.read) {
+    await store.patch('inbox', id, { read: true });
     const item = state.mails.find((x) => x.id === id);
-    if (state.folder === 'inbox' && item && !item.read) {
-      item.read = true;
-      $('#mailGroup .mail-item').filter((i, el) => el.dataset.id === id).removeClass('unread');
-      setUnread(state.unread - 1);
-      api(`/api/mails/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
-    }
-  } catch (e) { toast(e.message); }
+    if (item) item.read = true;
+    $('#mailGroup .mail-item').filter((i, el) => el.dataset.id === id).removeClass('unread');
+    meta.app.unread = Math.max(0, meta.app.unread - 1);
+    meta.app.pendingRead.push(id);
+    saveMeta('app'); setUnread(meta.app.unread);
+    if (navigator.onLine && authUser) flushReads().catch(() => {}); // offline: it is sent on the next sync
+  }
 }
 
-// ---------- PDF (print dialog -> "Save as PDF") ----------
-function savePdf() {
+// ---------- PDF ----------
+// Makes a real .pdf file and downloads it (the print dialog is unreliable on phones and in installed apps).
+// The mail is drawn by the browser, so any language and the mail's own layout come out right.
+// Remote images are included only if their server allows it; the text is an image, not selectable.
+const loadScript = (src) => new Promise((ok, fail) => {
+  const s = document.createElement('script');
+  s.src = src; s.onload = ok; s.onerror = () => fail(new Error('Could not load ' + src));
+  document.head.appendChild(s);
+});
+let pdfLibs = null;
+const loadPdfLibs = () => (pdfLibs = pdfLibs || Promise.all([loadScript('/vendor/html2canvas.min.js'), loadScript('/vendor/jspdf.umd.min.js')]).catch((e) => { pdfLibs = null; throw e; }));
+
+async function savePdf() {
+  const m = state.openMail;
+  if (!m || savePdf.busy) return;
+  savePdf.busy = true; toast('Preparing PDF…');
+  let sheet;
+  try {
+    await loadPdfLibs();
+    const body = window.DOMPurify.sanitize(m.html || `<div style="white-space:pre-wrap">${esc(m.text || '')}</div>`,
+      { FORBID_TAGS: ['style', 'meta', 'base', 'link', 'form', 'iframe', 'object', 'embed', 'script'] });
+    sheet = document.createElement('div');
+    sheet.id = 'pdfSheet';
+    sheet.innerHTML = `<div class="print-head"><h2>${esc(m.subject)}</h2><div>From: ${esc(m.from)}</div>`
+      + `<div>To: ${esc(m.to.join(', '))}</div><div>Date: ${esc(fullDate(m.date))}</div></div>` + body;
+    document.body.appendChild(sheet);
+    // give images up to 4 s to arrive
+    await Promise.race([
+      Promise.all([...sheet.querySelectorAll('img')].map((i) => (i.complete ? 0 : new Promise((r) => { i.onload = i.onerror = r; })))),
+      new Promise((r) => setTimeout(r, 4000)),
+    ]);
+    const W = sheet.offsetWidth; const H = sheet.scrollHeight;
+    const scale = Math.min(2, Math.sqrt(16e6 / (W * H)), 16000 / H); // stay inside phone canvas limits
+    if (scale < 0.5) throw new Error('Mail is too long for a PDF file');
+    const canvas = await window.html2canvas(sheet, {
+      scale, backgroundColor: '#ffffff', useCORS: true, logging: false, scrollX: 0, scrollY: 0, windowWidth: W,
+      onclone: (doc) => { const el = doc.getElementById('pdfSheet'); el.style.left = '0'; el.style.position = 'absolute'; },
+    });
+    const pdf = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
+    const pw = pdf.internal.pageSize.getWidth(); const ph = pdf.internal.pageSize.getHeight();
+    const slice = Math.floor((canvas.width * ph) / pw); // canvas rows per A4 page
+    for (let y = 0, page = 0; y < canvas.height; y += slice, page++) {
+      const part = document.createElement('canvas');
+      part.width = canvas.width; part.height = Math.min(slice, canvas.height - y);
+      const ctx = part.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, part.width, part.height);
+      ctx.drawImage(canvas, 0, y, part.width, part.height, 0, 0, part.width, part.height);
+      if (page) pdf.addPage();
+      pdf.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pw, (part.height * pw) / part.width);
+    }
+    pdf.save(((m.subject || 'mail').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'mail') + '.pdf');
+    toast('PDF saved');
+  } catch (e) {
+    toast('Could not make a PDF file, opening print instead.');
+    printMail();
+  } finally {
+    if (sheet) sheet.remove();
+    savePdf.busy = false;
+  }
+}
+
+// Fallback: browser print dialog -> "Save as PDF"
+function printMail() {
   const m = state.openMail;
   if (!m) return;
   const body = window.DOMPurify.sanitize(m.html || `<div style="white-space:pre-wrap">${esc(m.text || '')}</div>`,
@@ -242,26 +549,32 @@ function startReply() {
 }
 
 async function sendMail() {
+  if (!navigator.onLine) return toast('You are offline. Connect to send.');
   const payload = { to: $('#cTo').val(), subject: $('#cSubject').val(), from: $('#cFrom').val() || undefined, replyToId: $('.compose').data('replyToId') || undefined };
   payload[$('#cHtml').is(':checked') ? 'html' : 'text'] = $('#cBody').val();
   $('#cSend').prop('disabled', true);
   try {
     await api('/api/send', { method: 'POST', body: JSON.stringify(payload) });
     closeCompose(); toast('Sent');
-    if (state.folder === 'sent') loadList(true);
+    await syncFolder('sent', false).catch(() => {});
+    if (state.folder === 'sent') await showFolder();
   } catch (e) { toast(e.message); }
   $('#cSend').prop('disabled', false);
 }
 
 // ---------- events ----------
 $('#mailGroup').on('click', '.mail-item', function (e) { e.preventDefault(); openMail(this.dataset.id); });
-$('#mailGroup').on('click', '#loadMore', () => loadList(false));
+$('#mailGroup').on('click', '#loadMore', loadMore);
 $('#search').on('input', renderList);
-$('#refresh').on('click', (e) => { e.preventDefault(); loadList(true); });
+$('#refresh').on('click', (e) => { e.preventDefault(); syncAll({ reconcile: true, manual: true }); });
 $('#btnPdf').on('click', (e) => { e.preventDefault(); savePdf(); });
 $('#btnReply, #btnReplyTop').on('click', (e) => { e.preventDefault(); startReply(); });
-$('#mailBack').on('click', (e) => { e.preventDefault(); $('body').removeClass('mailcontent-show'); });
-$('#avatar').on('click', (e) => { e.preventDefault(); if (window.confirm('Sign out?')) signOutFn().then(() => location.reload()); });
+$('#mailBack').on('click', (e) => { e.preventDefault(); closeLayer('mail'); });
+$('#avatar').on('click', (e) => {
+  e.preventDefault();
+  if (!navigator.onLine) return toast('Go online to sign out.');
+  if (window.confirm('Sign out? Mail saved on this device will be removed.')) signOutFn().then(wipeLocal).then(() => location.reload());
+});
 
 $('#folders').on('click', '.nav-link', function (e) {
   e.preventDefault();
@@ -270,22 +583,31 @@ $('#folders').on('click', '.nav-link', function (e) {
   $('#folderTitle').text(state.folder === 'sent' ? 'Sent' : 'Inbox');
   $('#search').val('');
   hideReader();
-  $('body').removeClass('sidebar-show');
-  loadList(true);
+  closeLayer('side');
+  state.shown = PAGE;
+  showFolder().then(() => syncAll());
 });
 
 // template behaviours (sidebar, compose window)
 $('.mailbox-menu').on('click', (e) => {
   e.preventDefault();
-  $('body').toggleClass(window.matchMedia('(max-width: 767px)').matches ? 'sidebar-show' : 'sidebar-hide');
+  if (window.matchMedia('(max-width: 767px)').matches) {
+    if ($('body').hasClass('sidebar-show')) closeLayer('side'); else { $('body').addClass('sidebar-show'); pushLayer('side'); }
+  } else $('body').toggleClass('sidebar-hide');
   mc.update();
 });
-$('.backdrop').on('click', () => $('body').removeClass('sidebar-show'));
+$('.backdrop').on('click', () => closeLayer('side'));
 $('.mailbox-search .form-control').on('focusin focusout', function (e) { $(this).parent().toggleClass('onfocus', e.type === 'focusin'); });
 $('.menu-compose').on('click', (e) => { e.preventDefault(); openCompose(); });
 $('.compose-title, .nav-link-minimize').on('click', function (e) { e.preventDefault(); $(this).closest('.compose').toggleClass('minimize'); });
 $('.nav-link-fullscreen').on('click', function (e) { e.preventDefault(); $(this).closest('.compose').toggleClass('fullscreen'); });
 $('.nav-link-close, #cDiscard').on('click', (e) => { e.preventDefault(); closeCompose(); });
 $('#cSend').on('click', sendMail);
+
+// keep the saved copy fresh: when back online, when the app is reopened, and every couple of minutes
+window.addEventListener('online', () => { renderStatus(); toast('Back online'); initAuth().then(() => syncAll()).catch(() => {}); });
+window.addEventListener('offline', () => { renderStatus(); toast('You are offline. Showing saved mail.'); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - (meta.app.lastSync || 0) > 60000) syncAll(); });
+setInterval(() => { if (!document.hidden) syncAll(); }, 120000);
 
 boot();

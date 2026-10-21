@@ -28,4 +28,4 @@ reads, sends and replies from it. Nothing is forwarded to Gmail.
 - Webhook: `https://<your-domain>/api/incoming`, event `email.received`.
 
 ## Not built yet
-Offline cache, push notifications, HTML templates, attachments on sent mail.
+Push notifications, HTML templates, attachments on sent mail.
