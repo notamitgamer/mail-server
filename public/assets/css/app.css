@@ -1,14 +1,126 @@
-/* Additions on top of the SmartMail template (MIT, ThemePixels). */
-.signin { position: fixed; inset: 0; z-index: 2000; background: #fff; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; }
-.signin h3 { margin-bottom: 8px; }
-.toast-msg { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #212529; color: #fff; padding: 10px 16px; border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 3000; max-width: 90vw; font-size: 14px; }
-.toast-msg.show { opacity: 1; }
-.list-empty, .load-more { list-style: none; padding: 28px 16px; text-align: center; color: #8392a5; }
+/* Additions on top of the SmartMail template (MIT, ThemePixels).
+   Colours: Catppuccin Mocha (https://catppuccin.com). The template's light colours are overridden below. */
+:root {
+  --rosewater: #f5e0dc; --flamingo: #f2cdcd; --pink: #f5c2e7; --mauve: #cba6f7; --red: #f38ba8; --maroon: #eba0ac;
+  --peach: #fab387; --yellow: #f9e2af; --green: #a6e3a1; --teal: #94e2d5; --sky: #89dceb; --sapphire: #74c7ec;
+  --blue: #89b4fa; --lavender: #b4befe;
+  --text: #cdd6f4; --subtext1: #bac2de; --subtext0: #a6adc8; --overlay2: #9399b2; --overlay1: #7f849c; --overlay0: #6c7086;
+  --surface2: #585b70; --surface1: #45475a; --surface0: #313244; --base: #1e1e2e; --mantle: #181825; --crust: #11111b;
+  color-scheme: dark;
+}
+
+/* ---- base ---- */
+body { background-color: var(--base); color: var(--subtext1); }
+a { color: var(--blue); }
+a:hover { color: var(--sapphire); }
+.text-muted { color: var(--subtext0) !important; }
+::selection { background: rgba(203, 166, 247, .35); color: var(--text); }
+hr { color: var(--surface1); }
+
+/* ---- sidebar ---- */
+.sidebar { background-color: var(--mantle); border-right: 1px solid var(--surface0); }
+.sidebar-logo, .sidebar-logo:hover, .sidebar-logo:focus { color: var(--subtext0); }
+.sidebar-logo strong { color: var(--mauve); }
+.sidebar-label { color: var(--overlay1); }
+.sidebar-body .nav-link { color: var(--subtext0); }
+.sidebar-body .nav-link::before { background-color: var(--surface0); }
+.sidebar-body .nav-link:hover, .sidebar-body .nav-link:focus { color: var(--text); }
+.sidebar-body .nav-link.active { color: var(--mauve); }
+.sidebar-body .nav-link.active::before { background-color: var(--surface0); }
+.backdrop, .compose.fullscreen:not(.minimize) { background-color: rgba(17, 17, 27, .72); }
+
+/* ---- list column ---- */
+.mailbox { background-color: var(--base); }
+.mailbox-menu { color: var(--subtext0); }
+.mailbox-menu:hover, .mailbox-menu:focus { color: var(--mauve); }
+.mailbox-search { background-color: var(--surface0); border-color: var(--surface1); box-shadow: none; }
+.mailbox-search i { color: var(--overlay1); }
+.mailbox-search .form-control { background-color: transparent; color: var(--text); }
+.mailbox-search .form-control::placeholder { color: var(--overlay0); }
+.mailbox-search.onfocus { background-color: var(--surface0); border-color: var(--mauve); box-shadow: none; }
+.mailbox-header .mail-avatar span { background-color: var(--mauve); color: var(--crust); }
+.mailbox-option strong { color: var(--text); }
+.mailbox-option span { color: var(--overlay1); }
+.mailbox-option .pager { background-color: var(--surface0); border-color: var(--surface1); color: var(--subtext0); box-shadow: none; }
+.mailbox-option .pager:hover, .mailbox-option .pager:focus { background-color: var(--surface1); color: var(--text); }
+
+.mail-item { background-color: var(--mantle); }
+.mail-item:hover, .mail-item:focus { background-color: var(--surface0); border-color: rgba(203, 166, 247, .45); }
+.mail-item.unread { background-color: var(--surface0); }
+.mail-item.unread .mail-sender, .mail-item.unread .mail-time, .mail-item.unread .mail-subject { color: var(--text); }
+.mail-item.active { background-color: var(--surface0); border-color: var(--mauve); box-shadow: none; }
+.mail-sender { color: var(--subtext1); }
+.mail-time { color: var(--overlay1); }
+.mail-subject { color: var(--subtext1); }
+.mail-text { color: var(--overlay2); }
+.mail-avatar span { color: var(--crust); }
+.mail-avatar span.blue { background-color: var(--blue); }
+.mail-avatar span.green { background-color: var(--green); }
+.mail-avatar span.yellow { background-color: var(--yellow); }
+.mail-avatar span.red { background-color: var(--red); }
+.mail-avatar span.indigo { background-color: var(--mauve); }
+.list-empty, .load-more { list-style: none; padding: 28px 16px; text-align: center; color: var(--overlay1); }
 .load-more { padding: 14px; }
+
+/* ---- reader ---- */
+.mailcontent { background-color: var(--mantle); border-left: 1px solid var(--surface0); }
+.mailcontent-subject h4 { color: var(--text); }
+.mailcontent-subject .nav-link, .mailcontent-header .nav-link { color: var(--overlay2); }
+.mailcontent-subject .nav-link:hover, .mailcontent-subject .nav-link:focus,
+.mailcontent-header .nav-link:hover, .mailcontent-header .nav-link:focus { background-color: var(--surface0); color: var(--text); }
+.mailcontent-sender h6 { color: var(--text); }
+.mailcontent-sender h6 span { color: var(--overlay1); }
+.mailcontent-sender p { color: var(--subtext0); }
+.mailcontent-time { color: var(--overlay1); }
+.mailcontent-body { background-color: var(--base); border: 1px solid var(--surface0); box-shadow: none; color: var(--subtext1); }
+.mailcontent-placeholder i { color: var(--surface2); opacity: 1; }
+.mailcontent-placeholder h5 { color: var(--overlay1); }
 .mailcontent-body iframe { display: block; width: 100%; border: 0; min-height: 120px; }
+/* HTML mail is written for a white page, so it keeps one; plain-text mail follows the theme */
+.mailcontent-body iframe.frame-light { background: #fff; border-radius: 6px; }
 .attach-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.attach-chip { border: 1px solid #e3e7ed; border-radius: 6px; padding: 4px 10px; font-size: 13px; color: #596882; }
+.attach-chip { border: 1px solid var(--surface1); border-radius: 6px; padding: 4px 10px; font-size: 13px; color: var(--subtext0); background: var(--surface0); }
+
+/* ---- compose ---- */
+.menu-compose { background-color: var(--mauve); color: var(--crust); box-shadow: 0 4px 14px rgba(0, 0, 0, .45); }
+.menu-compose:hover, .menu-compose:focus { color: var(--crust); background-color: var(--lavender); }
+.compose-content { box-shadow: 0 8px 32px rgba(0, 0, 0, .55); }
+.compose-header { background-color: var(--surface1); color: var(--text); }
+.compose-header .nav-link { color: var(--subtext0); }
+.compose-body, .compose-footer { background-color: var(--base); border-color: var(--surface0); }
+.compose-body input.form-control { background-color: transparent; border-bottom-color: var(--surface1); color: var(--text); }
+.compose-body textarea.form-control { background-color: transparent; color: var(--text); }
+.compose-body input.form-control::placeholder { color: var(--overlay0); }
 .compose .form-select { font-size: 13px; }
+
+/* ---- forms and buttons ---- */
+.form-control, .form-select { background-color: var(--surface0); color: var(--text); border-color: var(--surface1); }
+.form-select { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23a6adc8' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e"); }
+.form-control:focus, .form-select:focus { background-color: var(--surface0); color: var(--text); border-color: var(--mauve); box-shadow: 0 0 0 .2rem rgba(203, 166, 247, .22); }
+.form-control::placeholder { color: var(--overlay0); }
+.compose-body .form-control:focus { box-shadow: none; }
+input[type="checkbox"] { accent-color: var(--mauve); }
+.btn { color: var(--subtext1); }
+.btn:hover { color: var(--text); }
+.btn-primary, .btn-primary:disabled, .btn-primary.disabled { background-color: var(--mauve); border-color: var(--mauve); color: var(--crust); }
+.btn-primary:hover, .btn-primary:focus { background-color: var(--lavender); border-color: var(--lavender); color: var(--crust); }
+.btn-secondary { background-color: var(--surface0); border-color: var(--surface1); color: var(--text); }
+.btn-secondary:hover, .btn-secondary:focus { background-color: var(--surface1); border-color: var(--mauve); color: var(--mauve); }
+.btn-outline-primary { color: var(--mauve); border-color: var(--mauve); }
+.btn-outline-primary:hover { background-color: var(--mauve); border-color: var(--mauve); color: var(--crust); }
+.btn-white { border-color: var(--surface1); color: var(--subtext0); background: transparent; }
+.btn-white:hover, .btn-white:focus { border-color: var(--overlay0); color: var(--text); }
+
+/* ---- sign-in, toast, scrollbars, small bits ---- */
+.signin { position: fixed; inset: 0; z-index: 2000; background: var(--base); display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+.signin h3 { margin-bottom: 8px; color: var(--text); }
+.signin h3 strong { color: var(--mauve); }
+.toast-msg { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--surface1); color: var(--text); padding: 10px 16px; border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 3000; max-width: 90vw; font-size: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, .45); }
+.toast-msg.show { opacity: 1; }
+.ps__thumb-y, .ps__thumb-x { background-color: var(--surface2); }
+.ps__rail-y:hover > .ps__thumb-y, .ps__thumb-y:active { background-color: var(--overlay0); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin .9s linear infinite; }
 #printArea { display: none; }
 @media print {
   body > *:not(#printArea) { display: none !important; }

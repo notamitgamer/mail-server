@@ -208,6 +208,14 @@ const toSummary = (id, d, folder) => ({
   attachmentCount: (d.attachments || []).length,
 });
 
+const toFull = (id, d, folder) => ({
+  ...toSummary(id, d, folder),
+  html: d.html || null,
+  text: d.text || null,
+  attachments: d.attachments || [],
+  truncated: Boolean(d.truncated),
+});
+
 // Public, non-secret settings the web app needs to start.
 app.get('/api/config', (req, res) => {
   let firebase = null;
@@ -243,14 +251,43 @@ app.get('/api/mails/:id', requireOwner, handle(async (req, res) => {
   const folder = folderOf(req);
   const snap = await db.collection(FOLDERS[folder].collection).doc(req.params.id).get();
   if (!snap.exists) return res.status(404).json({ error: 'Not found' });
-  const d = snap.data();
-  return res.set('Cache-Control', 'no-store').json({
-    ...toSummary(snap.id, d, folder),
-    html: d.html || null,
-    text: d.text || null,
-    attachments: d.attachments || [],
-    truncated: Boolean(d.truncated),
-  });
+  return res.set('Cache-Control', 'no-store').json(toFull(snap.id, snap.data(), folder));
+}));
+
+// Incremental sync for the offline cache. Full messages, so the app can show them without the network.
+//   ?since=<ms>   only mail newer than that, oldest first (what the app asks for after the first load)
+//   ?before=<ms>  the next page of older mail, newest first ("load more")
+//   neither       the newest page (first load on a new device)
+//   &reconcile=1  also return the unread count and ids, so read state from other devices catches up
+app.get('/api/sync', requireOwner, handle(async (req, res) => {
+  const folder = folderOf(req);
+  const { collection, dateField } = FOLDERS[folder];
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 50);
+  const since = Number(req.query.since);
+  const before = Number(req.query.before);
+  const ts = (ms) => admin.firestore.Timestamp.fromMillis(ms);
+
+  let query = db.collection(collection);
+  if (since) {
+    query = query.where(dateField, '>', ts(since)).orderBy(dateField, 'asc');
+  } else {
+    query = query.orderBy(dateField, 'desc');
+    if (before) query = query.startAfter(ts(before));
+  }
+  const snap = await query.limit(limit + 1).get();
+
+  const out = {
+    mails: snap.docs.slice(0, limit).map((doc) => toFull(doc.id, doc.data(), folder)),
+    hasMore: snap.docs.length > limit,
+  };
+  if (folder === 'inbox' && req.query.reconcile) {
+    try {
+      const unread = db.collection('mails').where('read', '==', false);
+      out.unread = (await unread.count().get()).data().count;
+      out.unreadIds = out.unread <= 1000 ? (await unread.select().get()).docs.map((d) => d.id) : null;
+    } catch (err) { /* optional */ }
+  }
+  res.set('Cache-Control', 'no-store').json(out);
 }));
 
 app.post('/api/mails/:id/read', requireOwner, handle(async (req, res) => {
