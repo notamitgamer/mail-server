@@ -635,7 +635,7 @@ async function markUnread() {
 function askConfirm({ title, message, ok = 'Confirm', danger = false }) {
   return new Promise((resolve) => {
     const el = document.getElementById('confirmModal');
-    const modal = bootstrap.Modal.getOrCreateInstance(el);
+    const modal = modalOf(el);
     let answer = false;
     $('#confirmTitle').text(title); $('#confirmMsg').text(message);
     $('#confirmOk').text(ok).toggleClass('btn-danger', danger).toggleClass('btn-primary', !danger)
@@ -646,7 +646,9 @@ function askConfirm({ title, message, ok = 'Confirm', danger = false }) {
 }
 
 // Quick forward: ask for an address, confirm, and the server sends the saved message as it is.
-const fwdModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('fwdModal'));
+// Bootstrap here is v5.0.1, which has no Modal.getOrCreateInstance (added in 5.1)
+const modalOf = (el) => bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+const fwdModal = () => modalOf(document.getElementById('fwdModal'));
 function fwdStep(n, addr) {
   $('#fwdStep1').toggleClass('d-none', n !== 1); $('#fwdStep2').toggleClass('d-none', n !== 2);
   $('#fwdNext, #fwdCancel').toggleClass('d-none', n !== 1); $('#fwdBack, #fwdConfirm').toggleClass('d-none', n !== 2);
