@@ -664,8 +664,7 @@ function askConfirm({ title, message, ok = 'Confirm', danger = false }) {
 }
 
 // Quick forward: ask for an address, confirm, and the server sends the saved message as it is.
-// Bootstrap here is v5.0.1, which has no Modal.getOrCreateInstance (added in 5.1)
-const modalOf = (el) => bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+const modalOf = (el) => bootstrap.Modal.getOrCreateInstance(el);
 const fwdModal = () => modalOf(document.getElementById('fwdModal'));
 function fwdStep(n, addr) {
   $('#fwdStep1').toggleClass('d-none', n !== 1); $('#fwdStep2').toggleClass('d-none', n !== 2);
