@@ -608,7 +608,7 @@ async function sendMail() {
 // Dashboard page of a message at Resend. A received mail's id is its Resend id; sent mail stores it as resendId.
 const resendUrl = (m, folder) => {
   const id = folder === 'sent' ? m.resendId : m.id;
-  return id ? (folder === 'sent' ? 'https://resend.com/emails/' : 'https://resend.com/emails/receiving/') + encodeURIComponent(id) : null;
+  return id ? 'https://resend.com/emails/' + encodeURIComponent(id) : null;
 };
 
 async function deleteMail() {
