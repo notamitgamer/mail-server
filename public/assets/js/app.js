@@ -443,8 +443,69 @@ async function openMail(id) {
   }
 }
 
-// ---------- PDF (print dialog -> "Save as PDF") ----------
-function savePdf() {
+// ---------- PDF ----------
+// Makes a real .pdf file and downloads it (the print dialog is unreliable on phones and in installed apps).
+// The mail is drawn by the browser, so any language and the mail's own layout come out right.
+// Remote images are included only if their server allows it; the text is an image, not selectable.
+const loadScript = (src) => new Promise((ok, fail) => {
+  const s = document.createElement('script');
+  s.src = src; s.onload = ok; s.onerror = () => fail(new Error('Could not load ' + src));
+  document.head.appendChild(s);
+});
+let pdfLibs = null;
+const loadPdfLibs = () => (pdfLibs = pdfLibs || Promise.all([loadScript('/vendor/html2canvas.min.js'), loadScript('/vendor/jspdf.umd.min.js')]).catch((e) => { pdfLibs = null; throw e; }));
+
+async function savePdf() {
+  const m = state.openMail;
+  if (!m || savePdf.busy) return;
+  savePdf.busy = true; toast('Preparing PDF…');
+  let sheet;
+  try {
+    await loadPdfLibs();
+    const body = window.DOMPurify.sanitize(m.html || `<div style="white-space:pre-wrap">${esc(m.text || '')}</div>`,
+      { FORBID_TAGS: ['style', 'meta', 'base', 'link', 'form', 'iframe', 'object', 'embed', 'script'] });
+    sheet = document.createElement('div');
+    sheet.id = 'pdfSheet';
+    sheet.innerHTML = `<div class="print-head"><h2>${esc(m.subject)}</h2><div>From: ${esc(m.from)}</div>`
+      + `<div>To: ${esc(m.to.join(', '))}</div><div>Date: ${esc(fullDate(m.date))}</div></div>` + body;
+    document.body.appendChild(sheet);
+    // give images up to 4 s to arrive
+    await Promise.race([
+      Promise.all([...sheet.querySelectorAll('img')].map((i) => (i.complete ? 0 : new Promise((r) => { i.onload = i.onerror = r; })))),
+      new Promise((r) => setTimeout(r, 4000)),
+    ]);
+    const W = sheet.offsetWidth; const H = sheet.scrollHeight;
+    const scale = Math.min(2, Math.sqrt(16e6 / (W * H)), 16000 / H); // stay inside phone canvas limits
+    if (scale < 0.5) throw new Error('Mail is too long for a PDF file');
+    const canvas = await window.html2canvas(sheet, {
+      scale, backgroundColor: '#ffffff', useCORS: true, logging: false, scrollX: 0, scrollY: 0, windowWidth: W,
+      onclone: (doc) => { const el = doc.getElementById('pdfSheet'); el.style.left = '0'; el.style.position = 'absolute'; },
+    });
+    const pdf = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
+    const pw = pdf.internal.pageSize.getWidth(); const ph = pdf.internal.pageSize.getHeight();
+    const slice = Math.floor((canvas.width * ph) / pw); // canvas rows per A4 page
+    for (let y = 0, page = 0; y < canvas.height; y += slice, page++) {
+      const part = document.createElement('canvas');
+      part.width = canvas.width; part.height = Math.min(slice, canvas.height - y);
+      const ctx = part.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, part.width, part.height);
+      ctx.drawImage(canvas, 0, y, part.width, part.height, 0, 0, part.width, part.height);
+      if (page) pdf.addPage();
+      pdf.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pw, (part.height * pw) / part.width);
+    }
+    pdf.save(((m.subject || 'mail').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'mail') + '.pdf');
+    toast('PDF saved');
+  } catch (e) {
+    toast('Could not make a PDF file, opening print instead.');
+    printMail();
+  } finally {
+    if (sheet) sheet.remove();
+    savePdf.busy = false;
+  }
+}
+
+// Fallback: browser print dialog -> "Save as PDF"
+function printMail() {
   const m = state.openMail;
   if (!m) return;
   const body = window.DOMPurify.sanitize(m.html || `<div style="white-space:pre-wrap">${esc(m.text || '')}</div>`,

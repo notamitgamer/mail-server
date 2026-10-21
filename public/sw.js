@@ -1,12 +1,13 @@
 // Service worker: keeps the app itself (shell + Firebase sign-in code) available offline.
 // Your mail is NOT stored here; app.js keeps it in IndexedDB. Bump CACHE when shipping changes to cached files.
-const CACHE = 'mail-shell-v4';
+const CACHE = 'mail-shell-v5';
 const SHELL = [
   '/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png',
   '/assets/css/style.min.css', '/assets/css/app.css', '/assets/js/app.js',
   '/lib/jquery/jquery.min.js', '/lib/bootstrap/js/bootstrap.bundle.min.js',
   '/lib/perfect-scrollbar/perfect-scrollbar.min.js', '/vendor/purify.min.js',
   '/lib/remixicon/fonts/remixicon.css', '/lib/remixicon/fonts/remixicon.woff2',
+  '/vendor/html2canvas.min.js', '/vendor/jspdf.umd.min.js', // loaded only when you save a PDF
 ];
 
 self.addEventListener('install', (event) => {

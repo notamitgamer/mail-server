@@ -138,6 +138,12 @@ input[type="checkbox"] { accent-color: var(--peach); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin .9s linear infinite; }
 #printArea { display: none; }
+/* off-screen page that the PDF is drawn from */
+#pdfSheet { position: fixed; left: -10000px; top: 0; width: 794px; box-sizing: border-box; padding: 40px; overflow: hidden; background: #fff; color: #000; font: 14px/1.5 Arial, 'Segoe UI', sans-serif; word-wrap: break-word; }
+#pdfSheet img { max-width: 100%; height: auto; }
+#pdfSheet .print-head { border-bottom: 1px solid #999; margin-bottom: 16px; padding-bottom: 8px; font-size: 13px; }
+#pdfSheet .print-head h2 { font-size: 20px; margin: 0 0 8px; color: #000; }
+#pdfSheet a { color: #1a56db; }
 @media print {
   body > *:not(#printArea) { display: none !important; }
   html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
