@@ -90,6 +90,23 @@ hr { color: var(--surface1); }
 .attach-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .attach-chip { border: 1px solid var(--surface1); border-radius: 6px; padding: 4px 10px; font-size: 13px; color: var(--subtext0); background: var(--surface0); }
 
+/* ---- message menu (three dots) ---- */
+.mailcontent-subject .dropdown { display: inline-block; }
+.dropdown-menu { background-color: var(--surface0); border: 1px solid var(--surface1); box-shadow: 0 8px 24px rgba(0, 0, 0, .55); z-index: 1500; min-width: 200px; padding: 6px 0; }
+.dropdown-item { color: var(--text); display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 14px; }
+.dropdown-item i { font-size: 17px; color: var(--overlay2); }
+.dropdown-item:hover, .dropdown-item:focus { background-color: var(--surface1); color: var(--text); }
+.dropdown-item.text-danger, .dropdown-item.text-danger i { color: var(--red) !important; }
+.dropdown-item.d-none { display: none !important; }
+.dropdown-divider { border-top-color: var(--surface1); margin: 6px 0; opacity: 1; }
+
+/* ---- modal ---- */
+.modal-content { background-color: var(--base); color: var(--text); border: 1px solid var(--surface1); box-shadow: 0 8px 32px rgba(0, 0, 0, .55); }
+.modal-header, .modal-footer { border-color: var(--surface0); }
+.modal-backdrop { --bs-backdrop-bg: var(--crust); }
+.btn-close { filter: invert(1) grayscale(1) brightness(1.6); }
+.form-label { color: var(--subtext1); }
+
 /* ---- compose ---- */
 .menu-compose { background-color: var(--peach); color: var(--crust); box-shadow: 0 4px 14px rgba(0, 0, 0, .45); }
 .menu-compose:hover, .menu-compose:focus { color: var(--crust); background-color: var(--peach-hi); }
@@ -117,6 +134,8 @@ input[type="checkbox"] { accent-color: var(--peach); }
 .btn-secondary:hover, .btn-secondary:focus { background-color: var(--surface1); border-color: var(--peach); color: var(--peach); }
 .btn-outline-primary { color: var(--peach); border-color: var(--peach); }
 .btn-outline-primary:hover { background-color: var(--peach); border-color: var(--peach); color: var(--crust); }
+.btn-danger { background-color: var(--red); border-color: var(--red); color: var(--crust); }
+.btn-danger:hover, .btn-danger:focus { background-color: var(--maroon); border-color: var(--maroon); color: var(--crust); }
 .btn-white { border-color: var(--surface1); color: var(--subtext0); background: transparent; }
 .btn-white:hover, .btn-white:focus { border-color: var(--overlay0); color: var(--text); }
 
