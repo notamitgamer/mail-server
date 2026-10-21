@@ -449,6 +449,60 @@ app.post('/api/send', requireOwner, express.json({ limit: '2mb' }), handle(async
   return res.json({ ok: true, id: ref.id });
 }));
 
+// Forwards a saved message to the given address(es) as it is (no editing), then files a copy under Sent.
+// Attachments are not stored with the message, so they are not forwarded.
+app.post('/api/mails/:id/forward', requireOwner, express.json({ limit: '10kb' }), handle(async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  const now = Date.now();
+  while (sendLog.length && now - sendLog[0] > 3600000) sendLog.shift();
+  if (sendLog.length >= 50) return res.status(429).json({ error: 'Hourly send limit reached' });
+
+  const raw = req.body && req.body.to;
+  const recipients = (Array.isArray(raw) ? raw : String(raw || '').split(/[,;\s]+/)).map((a) => String(a).trim()).filter(Boolean);
+  if (!recipients.length || recipients.length > 5 || !recipients.every((a) => EMAIL_RE.test(a))) {
+    return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+
+  const folder = folderOf(req);
+  const { collection, dateField } = FOLDERS[folder];
+  const snap = await db.collection(collection).doc(req.params.id).get();
+  if (!snap.exists) return res.status(404).json({ error: 'Message not found' });
+  const d = snap.data();
+
+  const when = d[dateField] && d[dateField].toDate ? d[dateField].toDate().toUTCString() : '';
+  const toList = [].concat(d.to || []).join(', ');
+  const subject = String(d.subject || '(no subject)').replace(/[\r\n]+/g, ' ').trim();
+  const head = ['---------- Forwarded message ----------', `From: ${d.from || ''}`, `Date: ${when}`, `Subject: ${subject}`, `To: ${toList}`];
+  const escH = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const text = head.join('\n') + '\n\n' + (d.text || (d.html ? htmlToText(d.html) : ''));
+  const html = `<div style="font:13px Arial,sans-serif;color:#555">${head.map(escH).join('<br>')}</div><br>`
+    + (d.html || `<div style="white-space:pre-wrap">${escH(d.text || '')}</div>`);
+  if (html.length > 1000000) return res.status(413).json({ error: 'Message too large to forward' });
+
+  // Send from the address the mail came in on, if it is one of ours.
+  const fromAddress = [].concat(d.to || []).map((a) => String(a).toLowerCase()).find((a) => SEND_ALIASES.includes(a)) || SEND_ALIASES[0];
+  if (!fromAddress) return res.status(500).json({ error: 'No sender address configured (ALLOWED_ALIASES)' });
+
+  const payload = {
+    from: FROM_NAME ? `"${FROM_NAME}" <${fromAddress}>` : fromAddress,
+    to: recipients,
+    subject: (/^fwd?:/i.test(subject) ? subject : 'Fwd: ' + subject).slice(0, 500),
+    html, text,
+  };
+  const { data, error } = await resend.emails.send(payload);
+  if (error) {
+    console.error(error);
+    return res.status(502).json({ error: error.message || 'Forward failed' });
+  }
+  sendLog.push(now);
+  const ref = await db.collection('sent').add({
+    from: fromAddress, to: recipients, subject: payload.subject, html, text,
+    snippet: makeSnippet({ text }), sentAt: admin.firestore.Timestamp.fromDate(new Date()),
+    resendId: data?.id || null, inReplyTo: null, attachments: [],
+  });
+  return res.json({ ok: true, id: ref.id });
+}));
+
 // ---- Push subscriptions (one document per browser or phone) ------------------
 app.post('/api/push/subscribe', requireOwner, express.json({ limit: '10kb' }), handle(async (req, res) => {
   const sub = req.body && req.body.subscription;

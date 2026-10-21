@@ -154,5 +154,33 @@
     <script src="lib/perfect-scrollbar/perfect-scrollbar.min.js"></script>
     <script src="vendor/purify.min.js"></script>
     <script type="module" src="assets/js/app.js"></script>
+    <div class="modal fade" id="fwdModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Forward message</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="fwdStep1">
+              <label for="fwdTo" class="form-label">Send this message to</label>
+              <input id="fwdTo" type="email" class="form-control" placeholder="name@example.com" autocomplete="off" inputmode="email">
+              <div id="fwdErr" class="text-danger small mt-2 d-none"></div>
+              <p class="text-muted small mt-3 mb-0">Sent as it is, from your address. Attachments are not included. <a href="#" id="fwdEdit">Edit before sending</a></p>
+            </div>
+            <div id="fwdStep2" class="d-none">
+              <p class="mb-2">Forward <strong id="fwdSubj"></strong> to:</p>
+              <p class="mb-0 fs-5" id="fwdAddr"></p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" id="fwdBack" class="btn btn-secondary d-none">Back</button>
+            <button type="button" id="fwdCancel" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" id="fwdNext" class="btn btn-primary">Continue</button>
+            <button type="button" id="fwdConfirm" class="btn btn-primary d-none">Confirm &amp; send</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

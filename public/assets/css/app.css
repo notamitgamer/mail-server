@@ -100,6 +100,13 @@ hr { color: var(--surface1); }
 .dropdown-item.d-none { display: none !important; }
 .dropdown-divider { border-top-color: var(--surface1); margin: 6px 0; opacity: 1; }
 
+/* ---- modal ---- */
+.modal-content { background-color: var(--base); color: var(--text); border: 1px solid var(--surface1); box-shadow: 0 8px 32px rgba(0, 0, 0, .55); }
+.modal-header, .modal-footer { border-color: var(--surface0); }
+.modal-backdrop { --bs-backdrop-bg: var(--crust); }
+.btn-close { filter: invert(1) grayscale(1) brightness(1.6); }
+.form-label { color: var(--subtext1); }
+
 /* ---- compose ---- */
 .menu-compose { background-color: var(--peach); color: var(--crust); box-shadow: 0 4px 14px rgba(0, 0, 0, .45); }
 .menu-compose:hover, .menu-compose:focus { color: var(--crust); background-color: var(--peach-hi); }

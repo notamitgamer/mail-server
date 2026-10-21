@@ -631,6 +631,45 @@ async function markUnread() {
   toast('Marked as unread');
 }
 
+// Quick forward: ask for an address, confirm, and the server sends the saved message as it is.
+const fwdModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('fwdModal'));
+function fwdStep(n, addr) {
+  $('#fwdStep1').toggleClass('d-none', n !== 1); $('#fwdStep2').toggleClass('d-none', n !== 2);
+  $('#fwdNext, #fwdCancel').toggleClass('d-none', n !== 1); $('#fwdBack, #fwdConfirm').toggleClass('d-none', n !== 2);
+  if (n === 2) { $('#fwdSubj').text('\u201c' + (state.openMail.subject || '(no subject)') + '\u201d'); $('#fwdAddr').text(addr); }
+}
+function openForward() {
+  if (!state.openMail) return;
+  if (!navigator.onLine) return toast('You are offline. Connect to forward.');
+  $('#fwdTo').val(''); $('#fwdErr').addClass('d-none'); $('#fwdConfirm').prop('disabled', false).text('Confirm & send');
+  fwdStep(1);
+  fwdModal().show();
+  setTimeout(() => $('#fwdTo').trigger('focus'), 300);
+}
+function fwdContinue() {
+  const addr = $('#fwdTo').val().trim();
+  if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(addr)) return $('#fwdErr').text('Enter a valid email address.').removeClass('d-none');
+  $('#fwdErr').addClass('d-none');
+  fwdStep(2, addr);
+}
+async function fwdSend() {
+  const m = state.openMail; const folder = state.folder;
+  if (!m) return;
+  if (!navigator.onLine) return toast('You are offline. Connect to forward.');
+  const $b = $('#fwdConfirm').prop('disabled', true).text('Sending…');
+  try {
+    await api(`/api/mails/${encodeURIComponent(m.id)}/forward?folder=${folder}`, { method: 'POST', body: JSON.stringify({ to: $('#fwdAddr').text() }) });
+    fwdModal().hide(); toast('Forwarded');
+    await syncFolder('sent', false).catch(() => {});
+    if (state.folder === 'sent') await showFolder();
+  } catch (e) { toast(e.message); $b.prop('disabled', false).text('Confirm & send'); }
+}
+$('#fwdNext').on('click', fwdContinue);
+$('#fwdBack').on('click', () => fwdStep(1));
+$('#fwdConfirm').on('click', fwdSend);
+$('#fwdTo').on('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); fwdContinue(); } });
+$('#fwdEdit').on('click', (e) => { e.preventDefault(); fwdModal().hide(); startForward(); });
+
 function startForward() {
   const m = state.openMail;
   if (!m) return;
@@ -655,7 +694,7 @@ async function shareMail() {
 }
 
 $('#mnReply').on('click', (e) => { e.preventDefault(); startReply(); });
-$('#mnForward').on('click', (e) => { e.preventDefault(); startForward(); });
+$('#mnForward').on('click', (e) => { e.preventDefault(); openForward(); });
 $('#mnUnread').on('click', (e) => { e.preventDefault(); markUnread(); });
 $('#mnPrint').on('click', (e) => { e.preventDefault(); printMail(); });
 $('#mnShare').on('click', (e) => { e.preventDefault(); shareMail(); });
