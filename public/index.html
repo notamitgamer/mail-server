@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#0168fa">
+    <meta name="robots" content="noindex">
+    <title>Mail</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <link href="lib/remixicon/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.min.css">
+    <link rel="stylesheet" href="assets/css/app.css">
+  </head>
+  <body>
+
+    <div id="signin" class="signin">
+      <div>
+        <h3><strong>Mail</strong>box</h3>
+        <p id="signinMsg" class="text-muted">Loading&hellip;</p>
+        <button id="btnSignin" type="button" class="btn btn-primary d-none"><i class="ri-google-fill me-1"></i> Sign in with Google</button>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <a href="/" class="sidebar-logo"><strong>Mail</strong>box</a>
+      </div>
+      <div class="sidebar-body">
+        <label class="sidebar-label">Mailboxes</label>
+        <nav class="nav flex-column mb-5" id="folders">
+          <a href="#" class="nav-link active" data-folder="inbox"><i class="ri-inbox-line"></i> <span>Inbox</span> <small id="unreadCount"></small></a>
+          <a href="#" class="nav-link" data-folder="sent"><i class="ri-send-plane-2-line"></i> <span>Sent</span></a>
+        </nav>
+      </div>
+    </div>
+
+    <div class="mailbox">
+      <div class="mailbox-header">
+        <a href="#" class="mailbox-menu"><i class="ri-menu-2-fill"></i></a>
+        <div class="mailbox-search">
+          <i class="ri-search-line"></i>
+          <input id="search" type="search" class="form-control" placeholder="Search loaded mail">
+        </div>
+        <a href="#" id="avatar" class="mail-avatar" title="Sign out"><span>m</span></a>
+      </div>
+
+      <div class="mailbox-option">
+        <strong id="folderTitle" class="ps-2">Inbox</strong>
+        <div class="ms-auto d-flex align-items-center">
+          <span id="countText"></span>
+          <a href="#" id="refresh" class="pager" title="Refresh"><i class="ri-refresh-line"></i></a>
+        </div>
+      </div>
+
+      <ul id="mailGroup" class="mail-group"></ul>
+    </div>
+
+    <div id="mailContent" class="mailcontent">
+      <div class="mailcontent-subject d-none">
+        <nav class="nav">
+          <a id="mailBack" href="#" class="nav-link" title="Back"><i class="ri-arrow-left-line"></i></a>
+          <a id="btnPdf" href="#" class="nav-link" title="Save as PDF"><i class="ri-file-pdf-2-line"></i></a>
+        </nav>
+        <h4 id="rSubject"></h4>
+      </div>
+      <div class="mailcontent-group d-none">
+        <div class="mailcontent-item">
+          <div class="mailcontent-header">
+            <div class="mail-avatar"><span id="rAvatar"></span></div>
+            <div class="mailcontent-sender">
+              <h6 id="rFrom"></h6>
+              <p id="rTo"></p>
+            </div>
+            <div class="mailcontent-time" id="rTime"></div>
+            <nav class="nav">
+              <a href="#" id="btnReplyTop" class="nav-link" title="Reply"><i class="ri-reply-line"></i></a>
+            </nav>
+          </div>
+          <div class="mailcontent-body">
+            <div id="rBody"></div>
+            <div id="rAttach" class="attach-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="mailcontent-footer d-none">
+        <a href="#" id="btnReply" class="btn btn-secondary btn-icontext"><i class="ri-reply-line me-1"></i> Reply</a>
+      </div>
+      <div class="mailcontent-placeholder">
+        <i class="ri-mail-send-line"></i>
+        <h5>No email has been selected</h5>
+      </div>
+    </div>
+
+    <a href="#" class="menu-compose" title="New message"><i class="ri-pencil-line"></i></a>
+
+    <div class="compose d-none">
+      <div class="compose-content">
+        <div class="compose-header">
+          <h6 class="compose-title" id="composeTitle">New Message</h6>
+          <nav class="nav">
+            <a href="#" class="nav-link nav-link-minimize"><i class="ri-subtract-line"></i></a>
+            <a href="#" class="nav-link nav-link-fullscreen">
+              <i class="ri-fullscreen-line"></i>
+              <i class="ri-fullscreen-exit-line"></i>
+            </a>
+            <a href="#" class="nav-link nav-link-close"><i class="ri-close-line"></i></a>
+          </nav>
+        </div>
+        <div class="compose-body">
+          <div class="form-group"><select id="cFrom" class="form-select"></select></div>
+          <div class="form-group"><input id="cTo" type="text" class="form-control" placeholder="To (separate several with commas)" autocomplete="off"></div>
+          <div class="form-group"><input id="cSubject" type="text" class="form-control" placeholder="Subject" autocomplete="off"></div>
+          <div class="form-group"><textarea id="cBody" class="form-control" rows="10"></textarea></div>
+        </div>
+        <div class="compose-footer">
+          <button id="cSend" type="button" class="btn btn-primary btn-icontext"><i class="ri-send-plane-fill me-2"></i> Send</button>
+          <label class="ms-3 small d-flex align-items-center gap-1 mb-0"><input id="cHtml" type="checkbox"> Send as HTML</label>
+          <button id="cDiscard" type="button" class="btn btn-white btn-icon ms-auto" title="Discard"><i class="ri-delete-bin-line"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="backdrop"></div>
+    <div id="printArea"></div>
+    <div id="toast" class="toast-msg"></div>
+
+    <script src="lib/jquery/jquery.min.js"></script>
+    <script src="lib/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="lib/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+    <script src="vendor/purify.min.js"></script>
+    <script type="module" src="assets/js/app.js"></script>
+  </body>
+</html>
