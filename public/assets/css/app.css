@@ -124,6 +124,13 @@ input[type="checkbox"] { accent-color: var(--peach); }
 .signin { position: fixed; inset: 0; z-index: 2000; background: var(--base); display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; }
 .signin h3 { margin-bottom: 8px; color: var(--text); }
 .signin h3 strong { color: var(--peach); }
+.signin > div { max-width: 440px; }
+.signin-note { margin-top: 28px; padding: 14px 16px; text-align: left; background: var(--surface0); border: 1px solid var(--surface1); border-radius: 8px; font-size: 13px; color: var(--subtext1); }
+.signin-note p { margin: 0; }
+.signin-note p + p { margin-top: 8px; color: var(--subtext0); }
+.signin-credit { margin-top: 22px; font-size: 12px; color: var(--overlay1); line-height: 1.7; }
+.signin-credit p { margin: 0 0 6px; }
+.signin-credit a, .signin-note a { color: var(--peach); }
 .toast-msg { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--surface1); color: var(--text); padding: 10px 16px; border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 3000; max-width: 90vw; font-size: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, .45); }
 .toast-msg.show { opacity: 1; }
 .ps__thumb-y, .ps__thumb-x { background-color: var(--surface2); }

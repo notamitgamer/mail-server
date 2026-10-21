@@ -1,6 +1,6 @@
 // Service worker: keeps the app itself (shell + Firebase sign-in code) available offline.
 // Your mail is NOT stored here; app.js keeps it in IndexedDB. Bump CACHE when shipping changes to cached files.
-const CACHE = 'mail-shell-v3';
+const CACHE = 'mail-shell-v4';
 const SHELL = [
   '/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png',
   '/assets/css/style.min.css', '/assets/css/app.css', '/assets/js/app.js',
@@ -42,8 +42,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(staleWhileRevalidate(req));
     return;
   }
-  // Everything else: same-origin, never the API.
-  if (url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
+  // Everything else: same-origin, never the API, and never /ping (it must show the real server state).
+  if (url.origin !== location.origin || url.pathname.startsWith('/api/') || url.pathname === '/ping') return;
 
   if (req.mode === 'navigate') { // opening the app (also "/?source=pwa", etc.) always gets the cached page offline
     event.respondWith(
