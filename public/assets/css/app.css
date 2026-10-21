@@ -84,6 +84,9 @@ hr { color: var(--surface1); }
 .mailcontent-body { background-color: var(--base); border: 1px solid var(--surface0); box-shadow: none; color: var(--subtext1); }
 .mailcontent-placeholder i { color: var(--surface2); opacity: 1; }
 .mailcontent-placeholder h5 { color: var(--overlay1); }
+/* Phones/tablets: native scrolling for the reader (see nativeReader in app.js), so a swipe that starts on an HTML mail's iframe still scrolls */
+#mailContent.native-scroll { overflow-x: hidden !important; overflow-y: auto !important; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+#mailContent.native-scroll .ps__rail-x, #mailContent.native-scroll .ps__rail-y { display: none !important; }
 .mailcontent-body iframe { display: block; width: 100%; border: 0; min-height: 120px; }
 /* HTML mail is written for a white page, so it keeps one; plain-text mail follows the theme */
 .mailcontent-body iframe.frame-light { background: #fff; border-radius: 6px; }

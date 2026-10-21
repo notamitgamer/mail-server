@@ -8,7 +8,25 @@ let getToken = async () => { throw new Error('Not signed in'); };
 let signOutFn = async () => {};
 
 const ps = new window.PerfectScrollbar('#mailGroup', { suppressScrollX: true });
-const mc = new window.PerfectScrollbar('#mailContent', { suppressScrollX: true });
+// The reader holds the mail in an iframe, and touches inside an iframe never reach this page, so
+// PerfectScrollbar (JS-driven scrolling) can't scroll when the swipe starts on the mail body.
+// On phones/tablets use the browser's native scrolling instead, which chains out of the iframe.
+const nativeReader = window.matchMedia('(max-width: 1199px), (pointer: coarse)');
+let mcInst = null;
+const mc = {
+  update() { if (mcInst) mcInst.update(); },
+  sync() {
+    if (nativeReader.matches) {
+      if (mcInst) { mcInst.destroy(); mcInst = null; }
+      document.getElementById('mailContent').classList.add('native-scroll');
+    } else {
+      document.getElementById('mailContent').classList.remove('native-scroll');
+      if (!mcInst) mcInst = new window.PerfectScrollbar('#mailContent', { suppressScrollX: true });
+    }
+  },
+};
+mc.sync();
+if (nativeReader.addEventListener) nativeReader.addEventListener('change', () => mc.sync());
 
 // ---------- helpers ----------
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
