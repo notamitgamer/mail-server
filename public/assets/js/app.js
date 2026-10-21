@@ -597,7 +597,7 @@ async function deleteMail() {
   const m = state.openMail; const folder = state.folder;
   if (!m) return;
   if (!navigator.onLine) return toast('Go online to delete mail.');
-  if (!window.confirm('Delete this message permanently? It is removed from every device and cannot be recovered.')) return;
+  if (!(await askConfirm({ title: 'Delete message?', message: 'It is removed from every device and cannot be recovered.', ok: 'Delete', danger: true }))) return;
   const row = await store.get(folder, m.id);
   try {
     await api(`/api/mails/${encodeURIComponent(m.id)}?folder=${folder}`, { method: 'DELETE' });
@@ -629,6 +629,20 @@ async function markUnread() {
   hideReader();
   await showFolder();
   toast('Marked as unread');
+}
+
+// Themed replacement for window.confirm(): resolves true only if the person presses the OK button.
+function askConfirm({ title, message, ok = 'Confirm', danger = false }) {
+  return new Promise((resolve) => {
+    const el = document.getElementById('confirmModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(el);
+    let answer = false;
+    $('#confirmTitle').text(title); $('#confirmMsg').text(message);
+    $('#confirmOk').text(ok).toggleClass('btn-danger', danger).toggleClass('btn-primary', !danger)
+      .off('click').on('click', () => { answer = true; modal.hide(); });
+    $(el).off('hidden.bs.modal').one('hidden.bs.modal', () => resolve(answer));
+    modal.show();
+  });
 }
 
 // Quick forward: ask for an address, confirm, and the server sends the saved message as it is.
@@ -772,10 +786,10 @@ $('#refresh').on('click', (e) => { e.preventDefault(); syncAll({ reconcile: true
 $('#btnPdf').on('click', (e) => { e.preventDefault(); savePdf(); });
 $('#btnReply, #btnReplyTop').on('click', (e) => { e.preventDefault(); startReply(); });
 $('#mailBack').on('click', (e) => { e.preventDefault(); closeLayer('mail'); });
-$('#avatar').on('click', (e) => {
+$('#avatar').on('click', async (e) => {
   e.preventDefault();
   if (!navigator.onLine) return toast('Go online to sign out.');
-  if (window.confirm('Sign out? Mail saved on this device will be removed.')) signOutFn().then(wipeLocal).then(() => location.reload());
+  if (await askConfirm({ title: 'Sign out?', message: 'Mail saved on this device will be removed.', ok: 'Sign out', danger: true })) signOutFn().then(wipeLocal).then(() => location.reload());
 });
 
 $('#folders').on('click', '.nav-link', function (e) {

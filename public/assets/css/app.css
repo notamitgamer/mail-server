@@ -134,6 +134,8 @@ input[type="checkbox"] { accent-color: var(--peach); }
 .btn-secondary:hover, .btn-secondary:focus { background-color: var(--surface1); border-color: var(--peach); color: var(--peach); }
 .btn-outline-primary { color: var(--peach); border-color: var(--peach); }
 .btn-outline-primary:hover { background-color: var(--peach); border-color: var(--peach); color: var(--crust); }
+.btn-danger { background-color: var(--red); border-color: var(--red); color: var(--crust); }
+.btn-danger:hover, .btn-danger:focus { background-color: var(--maroon); border-color: var(--maroon); color: var(--crust); }
 .btn-white { border-color: var(--surface1); color: var(--subtext0); background: transparent; }
 .btn-white:hover, .btn-white:focus { border-color: var(--overlay0); color: var(--text); }
 
