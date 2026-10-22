@@ -909,7 +909,8 @@ mailGroupEl.addEventListener('touchmove', (e) => {
     pullTo(Math.min(110, touch.dy * 0.5), false);
   }
 }, { passive: false });
-const touchEnd = () => {
+const touchEnd = (e) => {
+  const cancelled = e.type === 'touchcancel'; // the system took the touch (gesture, call...): snap back, run nothing
   const mode = touch.mode; touch.mode = null;
   const animate = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (mode === 'swipe') {
@@ -918,12 +919,13 @@ const touchEnd = () => {
     touch.swipedAt = Date.now();
     slide(item, 0, animate);
     row.classList.remove('armed');
+    if (cancelled) return;
     if (dx <= -SWIPE_AT) deleteMail(id);
     else if (dx >= SWIPE_AT && state.folder === 'inbox') toggleReadById(id);
   } else if (mode === 'pull') {
     const pulled = Math.min(110, touch.dy * 0.5);
     pullTo(0, animate);
-    if (pulled >= PULL_AT) syncAll({ reconcile: true, manual: true });
+    if (!cancelled && pulled >= PULL_AT) syncAll({ reconcile: true, manual: true });
   }
 };
 mailGroupEl.addEventListener('touchend', touchEnd);
