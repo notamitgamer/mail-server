@@ -250,8 +250,8 @@ async function boot() {
     config = saved;
     if (hint) {
       openApp(hint).then(async () => { // opened from a notification: the push already saved the mail, so show it now, before sign-in finishes
-        const id = wantedMail();
-        if (id && await store.get('inbox', id)) { history.replaceState(null, '', location.pathname); openInboxMail(id, { sync: false }); }
+        const id = wantedMail(); const token = wantedToken();
+        if (id && (token || await store.get('inbox', id))) { history.replaceState(null, '', location.pathname); openInboxMail(id, { sync: false, token }); }
       }).catch(() => {});
     }
     initAuth().catch(() => { if (!hint) showSignin('Could not load sign-in. Are you offline?', false); });
@@ -279,13 +279,14 @@ async function start(user) {
   localStorage.setItem('mb_user', user.email || 'me');
   await openApp(user.email);
   initPush().catch(() => {}); // notifications are required: asks for them here if they are not on yet
-  const wanted = wantedMail(); // opened from a notification
+  const wanted = wantedMail(); const token = wantedToken(); // opened from a notification
   if (wanted) history.replaceState(null, '', location.pathname);
-  if (wanted && await store.get('inbox', wanted)) await openInboxMail(wanted, { sync: false }); // already on this phone: show it now, sync after
+  if (wanted && (token || await store.get('inbox', wanted))) openInboxMail(wanted, { sync: false, token }); // show it now; the sync below runs alongside
   await syncAll({ reconcile: true });
-  if (wanted && state.openId !== wanted) openInboxMail(wanted, { sync: false }); // it had to be fetched first
+  if (wanted && state.openId !== wanted) openInboxMail(wanted, { sync: false }); // no token and not saved: it had to be synced first
 }
 const wantedMail = () => new URLSearchParams(location.search).get('mail'); // set when the app is opened from a notification
+const wantedToken = () => new URLSearchParams(location.search).get('t'); // read token of that mail, from its push
 
 // ---------- list ----------
 const COLORS = ['green', 'blue', 'indigo', 'red', 'yellow'];
@@ -507,13 +508,14 @@ function renderReader(m) {
   mc.update();
 }
 
-async function openMail(id) {
+async function openMail(id, { ready } = {}) { // ready: optional async step that makes the mail available (it is shown as loading until then)
   const folder = state.folder;
   state.openId = id;
   $('#mailGroup .mail-item').removeClass('active').filter((i, el) => el.dataset.id === id).addClass('active');
   showReader();
   $('#rSubject').html('<span class="skel skel-line w75 skel-title" role="status" aria-label="Loading"></span>');
   $('#rBody').html('<span class="skel skel-line w90"></span><span class="skel skel-line w75"></span><span class="skel skel-line w60"></span>'); $('#rAttach').empty();
+  if (ready) await ready();
   const m = await store.get(folder, id);
   if (state.openId !== id) return;
   if (!m) { $('#rSubject').text(''); return toast('This message is not saved on this device yet.'); }
@@ -889,25 +891,40 @@ async function testPush() { // the bell: notifications cannot be turned off here
   try { await api('/api/push/test', { method: 'POST' }); toast('Test notification sent'); } catch (e) { toast('Could not send a test: ' + e.message); }
 }
 
-// Opens a mail from a notification. When the push already saved it on this phone it shows at once and the
-// sync runs afterwards; only if it is not here yet does it sync first.
-async function openInboxMail(id, { sync = true } = {}) {
+// Fetches one mail with the read token from its push and saves it. No sign-in and no sync needed, so a tap
+// that comes before the service worker has finished saving the mail is still quick.
+async function fetchPushMail(id, token) {
+  if (!id || !token || !navigator.onLine) return false;
+  try {
+    const res = await fetch('/api/push/mail/' + encodeURIComponent(id), { headers: { 'X-Push-Token': token }, cache: 'no-store' });
+    if (!res.ok) return false;
+    const m = await res.json();
+    if (!(await store.get('inbox', id))) await store.put('inbox', [m]); // the worker may have saved it meanwhile
+    return true;
+  } catch (e) { return false; }
+}
+
+// Opens a mail from a notification. The reader opens at once (as loading). If the mail is already on the
+// phone it shows immediately; if not, it is fetched directly with the push token, and only if that is not
+// possible does it fall back to a full sync. The normal sync runs afterwards.
+async function openInboxMail(id, { sync = true, token = null } = {}) {
   await appReady;
   if (state.folder !== 'inbox') $('#folders .nav-link[data-folder="inbox"]').trigger('click');
   const saved = await store.get('inbox', id);
-  if (!saved) {
+  const ready = saved ? null : async () => {
+    if (await fetchPushMail(id, token)) return;
     await syncAll();
     while (syncing) await new Promise((r) => setTimeout(r, 100)); // a sync that was already running
-  }
-  await openMail(id);
-  if (saved && sync) syncAll().catch(() => {});
+  };
+  await openMail(id, { ready });
+  if (sync) syncAll().catch(() => {});
 }
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (e) => { // sent by sw.js
     const d = e.data || {};
     if (d.type === 'new-mail') syncAll();
-    if (d.type === 'open-mail' && d.id) openInboxMail(d.id);
+    if (d.type === 'open-mail' && d.id) openInboxMail(d.id, { token: d.t });
   });
 }
 $('#btnNotify').on('click', (e) => { e.preventDefault(); testPush(); });

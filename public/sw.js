@@ -1,6 +1,6 @@
 // Service worker: keeps the app itself (shell + Firebase sign-in code) available offline.
 // Your mail is NOT stored here; app.js keeps it in IndexedDB. Bump CACHE when shipping changes to cached files.
-const CACHE = 'mail-shell-v16';
+const CACHE = 'mail-shell-v17';
 const SHELL = [
   '/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png',
   '/assets/css/style.min.css', '/assets/css/app.css', '/assets/js/app.js',
@@ -73,23 +73,29 @@ const openMailDb = () => new Promise((ok) => {
   r.onsuccess = () => ok(r.result);
   r.onerror = () => ok(null);
 });
-async function saveMailFromPush(id, token) { // never throws: if it fails, the app syncs the mail when opened
-  if (!id || !token) return;
+async function saveMailFromPush(d) { // never throws: if it fails, the app fetches the mail when it is opened
+  const { id, t: token, m: inline } = d;
+  if (!id || (!token && !inline)) return;
   let db = null;
   try {
     db = await openMailDb();
     if (!db) return;
     const key = 'inbox:' + id;
     if (await idbp(db.transaction('mails').objectStore('mails').get(key))) return; // already saved
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 20000);
-    const res = await fetch('/api/push/mail/' + encodeURIComponent(id), { headers: { 'X-Push-Token': token }, cache: 'no-store', signal: ctl.signal });
-    clearTimeout(timer);
-    if (!res.ok) return;
-    const m = await res.json();
-    const t = db.transaction('mails', 'readwrite');
-    t.objectStore('mails').put({ ...m, folder: 'inbox', key, ts: Date.parse(m.date) });
-    await new Promise((ok, fail) => { t.oncomplete = ok; t.onerror = () => fail(t.error); t.onabort = () => fail(t.error); });
+    let m = inline; // small mails arrive inside the push: no request needed
+    if (!m) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 20000);
+      const res = await fetch('/api/push/mail/' + encodeURIComponent(id), { headers: { 'X-Push-Token': token }, cache: 'no-store', signal: ctl.signal });
+      clearTimeout(timer);
+      if (!res.ok) return;
+      m = await res.json();
+    }
+    // Add only if still absent: the app may have saved (and even read) it while this was running.
+    const tx = db.transaction('mails', 'readwrite');
+    const os = tx.objectStore('mails');
+    if (!(await idbp(os.get(key)))) os.put({ ...m, folder: 'inbox', key, ts: Date.parse(m.date) });
+    await new Promise((ok, fail) => { tx.oncomplete = ok; tx.onerror = () => fail(tx.error); tx.onabort = () => fail(tx.error); });
   } catch (e) { /* ignore */ } finally { if (db) db.close(); }
 }
 
@@ -108,23 +114,23 @@ self.addEventListener('push', (event) => {
         body: d.body || '',
         icon: '/icons/icon-192.png',
         tag: d.id ? 'mail-' + d.id : 'mail-test',
-        data: { id: d.id || null },
+        data: { id: d.id || null, t: d.t || null },
       }),
-      saveMailFromPush(d.id, d.t),
+      saveMailFromPush(d),
     ]);
   })());
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const id = event.notification.data && event.notification.data.id;
+  const { id, t } = event.notification.data || {};
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     if (wins.length) {
       await wins[0].focus().catch(() => {});
-      if (id) wins[0].postMessage({ type: 'open-mail', id });
+      if (id) wins[0].postMessage({ type: 'open-mail', id, t });
       return;
     }
-    await self.clients.openWindow(id ? '/?mail=' + encodeURIComponent(id) : '/');
+    await self.clients.openWindow(id ? '/?mail=' + encodeURIComponent(id) + (t ? '&t=' + encodeURIComponent(t) : '') : '/');
   })());
 });

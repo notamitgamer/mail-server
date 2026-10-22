@@ -45,9 +45,11 @@ Reply, Forward, Mark as unread, Save as PDF, Print, Share, Open in Resend, Delet
   when the phone reconnects, even if the app is closed.
 - Turn it on: open the installed app, sign in, tap **Allow notifications**. A test notification is sent. The bell icon
   only shows the state; tap it to send another test.
-- Tapping a notification opens the mail at once: each push carries a short-lived read token for that one mail
-  (`/api/push/mail/:id`), and the service worker saves the mail on the phone the moment the push arrives.
-  If that save did not happen (for example the phone was offline), the app syncs first and then opens it.
+- Tapping a notification opens the mail at once. A small mail (up to about 3.5 KB) travels inside the push itself;
+  every push also carries a short-lived read token for that one mail (`/api/push/mail/:id`). The service worker
+  saves the mail on the phone while it shows the notification. If you tap before that has finished, the app opens
+  the reader straight away and fetches just that mail with the token (no sign-in, no sync). Only if that is not
+  possible (for example the phone is offline) does it sync first and then open it.
 - The app re-checks the subscription on every start and whenever it comes back to the front, and starts over if the
   server's VAPID key changed, so an update does not silently turn notifications off.
 - Android: install the app from Chrome ("Install app"). On Vivo / Origin OS also set the app's battery to

@@ -115,9 +115,9 @@ const capBody = (value) => (value ? value.slice(0, MAX_BODY_CHARS) : null);
 // Save one received mail, keyed by Resend's email ID. create() fails if the
 // document exists, so a webhook retry never duplicates it or resets `read`.
 const archiveEmail = async ({ emailId, from, to, subject, receivedAt, parsed, fetchError }) => {
-  if (!db) return false;
+  if (!db) return null;
   try {
-    await db.collection('mails').doc(emailId).create({
+    const doc = {
       from,
       to,
       subject,
@@ -137,10 +137,11 @@ const archiveEmail = async ({ emailId, from, to, subject, receivedAt, parsed, fe
         size: a.size || 0,
       })),
       fetchError: fetchError || null,
-    });
-    return true; // newly saved
+    };
+    await db.collection('mails').doc(emailId).create(doc);
+    return doc; // newly saved
   } catch (err) {
-    if (err.code === 6 || /already exists/i.test(err.message)) return false; // retry of a mail we already saved
+    if (err.code === 6 || /already exists/i.test(err.message)) return null; // retry of a mail we already saved
     throw err;
   }
 };
@@ -171,15 +172,23 @@ const pushToAll = async (payload) => {
   return sent;
 };
 
-const sendPush = ({ emailId, from, subject, snippet }) => {
+const PUSH_INLINE_MAX = 3500; // Web Push allows about 4 KB; stay well under it
+const sendPush = ({ emailId, from, subject, snippet, doc }) => {
   const m = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/.exec(from || '');
   const sender = (m ? m[1].trim() || m[2].trim() : String(from || '')).slice(0, 100);
-  return pushToAll({
+  const payload = {
     title: sender || 'New mail',
     body: (subject + (snippet ? ' - ' + snippet : '')).slice(0, 200),
     id: emailId,
     t: signMailToken(emailId),
-  });
+  };
+  // A small mail travels inside the push itself, so the phone has it the moment the notification shows
+  // and tapping it needs no request at all. Bigger mails are fetched with the token instead.
+  if (doc) {
+    const row = toFull(emailId, doc, 'inbox');
+    if (Buffer.byteLength(JSON.stringify({ ...payload, m: row })) <= PUSH_INLINE_MAX) payload.m = row;
+  }
+  return pushToAll(payload);
 };
 
 // Resend's email.received webhook only carries metadata (no body, headers or
@@ -242,7 +251,7 @@ app.post('/api/incoming', express.text({ type: 'application/json' }), async (req
       return res.status(500).json({ error: 'Storage not configured' });
     }
     const parsed = await fetchFullEmail(emailData.email_id);
-    const isNew = await archiveEmail({
+    const saved = await archiveEmail({
       emailId: emailData.email_id,
       from: originalSender,
       to: originalRecipient,
@@ -251,7 +260,7 @@ app.post('/api/incoming', express.text({ type: 'application/json' }), async (req
       parsed,
     });
     // Push only for a mail that was newly saved, so a webhook retry does not notify twice.
-    if (isNew) await sendPush({ emailId: emailData.email_id, from: originalSender, subject, snippet: makeSnippet(parsed) });
+    if (saved) await sendPush({ emailId: emailData.email_id, from: originalSender, subject, snippet: makeSnippet(parsed), doc: saved });
     return res.status(200).json({ success: true });
 
   } catch (error) {
