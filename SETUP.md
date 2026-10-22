@@ -37,16 +37,26 @@ Reply, Forward, Mark as unread, Save as PDF, Print, Share, Open in Resend, Delet
 - **Open in Resend** opens the message in the Resend dashboard (needs you to be signed in to Resend).
 
 ## Push notifications
-- Every new mail triggers a Web Push to each device that turned on the bell icon in the app. Subscriptions are
+- Notifications are required: after sign-in the app asks for permission and shows a full-screen prompt until they are on
+  (browsers that cannot do push, such as an iPhone browser tab, are not blocked). Every new mail triggers a Web Push to
+  each device. Subscriptions are
   stored in the Firestore `pushSubs` collection (no extra Firestore rules needed; only the server touches it).
 - Offline phones: the push service holds the notification for 7 days (`PUSH_TTL` in `server.js`) and delivers it
   when the phone reconnects, even if the app is closed.
-- Turn it on: open the installed app, sign in, tap the bell, allow notifications. A test notification is sent.
+- Turn it on: open the installed app, sign in, tap **Allow notifications**. A test notification is sent. The bell icon
+  only shows the state; tap it to send another test.
+- Tapping a notification opens the mail at once. A small mail (up to about 3.5 KB) travels inside the push itself;
+  every push also carries a short-lived read token for that one mail (`/api/push/mail/:id`). The service worker
+  saves the mail on the phone while it shows the notification. If you tap before that has finished, the app opens
+  the reader straight away and fetches just that mail with the token (no sign-in, no sync). Only if that is not
+  possible (for example the phone is offline) does it sync first and then open it.
+- The app re-checks the subscription on every start and whenever it comes back to the front, and starts over if the
+  server's VAPID key changed, so an update does not silently turn notifications off.
 - Android: install the app from Chrome ("Install app"). On Vivo / Origin OS also set the app's battery to
   **Unrestricted** (or "High background power consumption" allowed), allow **Autostart** / background activity,
   and keep Chrome notifications on. Otherwise the system may hold pushes until the screen is turned on.
 - iPhone: only works after "Add to Home Screen" (iOS 16.4+).
-- A phone stops being notified if its browser data is cleared; open the app once and tap the bell again.
+- A phone stops being notified if its browser data is cleared; open the app once and allow notifications again.
 
 ## Not built yet
 HTML templates, attachments on sent mail.
