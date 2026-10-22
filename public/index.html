@@ -2,13 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover">
     <meta name="theme-color" content="#1e1e2e">
     <meta name="robots" content="noindex">
     <title>Mail</title>
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/icon-192.png">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <link rel="preload" href="assets/fonts/lexend-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link href="lib/remixicon/fonts/remixicon.css" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.min.css">
     <link rel="stylesheet" href="assets/css/app.css">
@@ -37,7 +38,7 @@
       </div>
       <div class="sidebar-body">
         <label class="sidebar-label">Mailboxes</label>
-        <nav class="nav flex-column mb-5" id="folders">
+        <nav class="nav flex-column mb-5" id="folders" aria-label="Mailboxes">
           <a href="#" class="nav-link active" data-folder="inbox"><i class="ri-inbox-line"></i> <span>Inbox</span> <small id="unreadCount"></small><small id="totalInbox" class="total"></small></a>
           <a href="#" class="nav-link" data-folder="sent"><i class="ri-send-plane-2-line"></i> <span>Sent</span> <small id="totalSent" class="total"></small></a>
         </nav>
@@ -46,30 +47,31 @@
 
     <div class="mailbox">
       <div class="mailbox-header">
-        <a href="#" class="mailbox-menu"><i class="ri-menu-2-fill"></i></a>
+        <a href="#" class="mailbox-menu" role="button" aria-label="Open menu"><i class="ri-menu-2-fill" aria-hidden="true"></i></a>
         <div class="mailbox-search">
           <i class="ri-search-line"></i>
-          <input id="search" type="search" class="form-control" placeholder="Search loaded mail">
+          <input id="search" type="search" class="form-control" placeholder="Search loaded mail" aria-label="Search loaded mail">
         </div>
-        <a href="#" id="avatar" class="mail-avatar" title="Sign out"><span>m</span></a>
+        <a href="#" id="avatar" class="mail-avatar" role="button" title="Sign out" aria-label="Sign out"><span>m</span></a>
       </div>
 
       <div class="mailbox-option">
         <strong id="folderTitle" class="ps-2">Inbox</strong>
         <div class="ms-auto d-flex align-items-center">
-          <span id="countText"></span>
-          <a href="#" id="btnNotify" class="pager d-none" title="Turn on notifications"><i class="ri-notification-off-line"></i></a>
-          <a href="#" id="refresh" class="pager" title="Refresh"><i class="ri-refresh-line"></i></a>
+          <span id="countText" role="status"></span>
+          <a href="#" id="btnNotify" class="pager d-none" role="button" title="Turn on notifications" aria-label="Turn on notifications"><i class="ri-notification-off-line" aria-hidden="true"></i></a>
+          <a href="#" id="refresh" class="pager" role="button" title="Refresh" aria-label="Refresh mail"><i class="ri-refresh-line" aria-hidden="true"></i></a>
         </div>
       </div>
 
-      <ul id="mailGroup" class="mail-group"></ul>
+      <div id="ptr" class="ptr" aria-hidden="true"><i class="ri-refresh-line"></i></div>
+      <ul id="mailGroup" class="mail-group" aria-label="Messages" aria-busy="false"></ul>
     </div>
 
     <div id="mailContent" class="mailcontent">
       <div class="mailcontent-subject d-none">
         <nav class="nav">
-          <a id="mailBack" href="#" class="nav-link" title="Back"><i class="ri-arrow-left-line"></i></a>
+          <a id="mailBack" href="#" class="nav-link" role="button" title="Back to list" aria-label="Back to list"><i class="ri-arrow-left-line" aria-hidden="true"></i><span>Back</span></a>
           <div class="dropdown">
             <a href="#" id="btnMore" class="nav-link" data-bs-toggle="dropdown" aria-expanded="false" title="More" aria-label="More actions"><i class="ri-more-2-fill"></i></a>
             <div class="dropdown-menu dropdown-menu-end">
@@ -98,7 +100,7 @@
             </div>
             <div class="mailcontent-time" id="rTime"></div>
             <nav class="nav">
-              <a href="#" id="btnReplyTop" class="nav-link" title="Reply"><i class="ri-reply-line"></i></a>
+              <a href="#" id="btnReplyTop" class="nav-link" role="button" title="Reply" aria-label="Reply"><i class="ri-reply-line" aria-hidden="true"></i></a>
             </nav>
           </div>
           <div class="mailcontent-body">
@@ -116,38 +118,38 @@
       </div>
     </div>
 
-    <a href="#" class="menu-compose" title="New message"><i class="ri-pencil-line"></i></a>
+    <a href="#" class="menu-compose" role="button" title="New message" aria-label="New message"><i class="ri-pencil-line" aria-hidden="true"></i></a>
 
-    <div class="compose d-none">
+    <div class="compose d-none" role="dialog" aria-label="Compose message">
       <div class="compose-content">
         <div class="compose-header">
           <h6 class="compose-title" id="composeTitle">New Message</h6>
           <nav class="nav">
-            <a href="#" class="nav-link nav-link-minimize"><i class="ri-subtract-line"></i></a>
-            <a href="#" class="nav-link nav-link-fullscreen">
-              <i class="ri-fullscreen-line"></i>
-              <i class="ri-fullscreen-exit-line"></i>
+            <a href="#" class="nav-link nav-link-minimize" role="button" aria-label="Minimize"><i class="ri-subtract-line" aria-hidden="true"></i></a>
+            <a href="#" class="nav-link nav-link-fullscreen" role="button" aria-label="Toggle full screen">
+              <i class="ri-fullscreen-line" aria-hidden="true"></i>
+              <i class="ri-fullscreen-exit-line" aria-hidden="true"></i>
             </a>
-            <a href="#" class="nav-link nav-link-close"><i class="ri-close-line"></i></a>
+            <a href="#" class="nav-link nav-link-close" role="button" aria-label="Close"><i class="ri-close-line" aria-hidden="true"></i></a>
           </nav>
         </div>
         <div class="compose-body">
-          <div class="form-group"><select id="cFrom" class="form-select"></select></div>
-          <div class="form-group"><input id="cTo" type="text" class="form-control" placeholder="To (separate several with commas)" autocomplete="off"></div>
-          <div class="form-group"><input id="cSubject" type="text" class="form-control" placeholder="Subject" autocomplete="off"></div>
-          <div class="form-group"><textarea id="cBody" class="form-control" rows="10"></textarea></div>
+          <div class="form-group"><select id="cFrom" class="form-select" aria-label="From"></select></div>
+          <div class="form-group"><input id="cTo" type="text" class="form-control" placeholder="To (separate several with commas)" autocomplete="off" aria-label="To"></div>
+          <div class="form-group"><input id="cSubject" type="text" class="form-control" placeholder="Subject" autocomplete="off" aria-label="Subject"></div>
+          <div class="form-group"><textarea id="cBody" class="form-control" rows="10" aria-label="Message"></textarea></div>
         </div>
         <div class="compose-footer">
           <button id="cSend" type="button" class="btn btn-primary btn-icontext"><i class="ri-send-plane-fill me-2"></i> Send</button>
           <label class="ms-3 small d-flex align-items-center gap-1 mb-0"><input id="cHtml" type="checkbox"> Send as HTML</label>
-          <button id="cDiscard" type="button" class="btn btn-white btn-icon ms-auto" title="Discard"><i class="ri-delete-bin-line"></i></button>
+          <button id="cDiscard" type="button" class="btn btn-white btn-icon ms-auto" title="Discard" aria-label="Discard draft"><i class="ri-delete-bin-line"></i></button>
         </div>
       </div>
     </div>
 
     <div class="backdrop"></div>
     <div id="printArea"></div>
-    <div id="toast" class="toast-msg"></div>
+    <div id="toast" class="toast-msg" role="status" aria-live="polite"></div>
 
     <script src="lib/jquery/jquery.min.js"></script>
     <script src="lib/bootstrap/js/bootstrap.bundle.min.js"></script>

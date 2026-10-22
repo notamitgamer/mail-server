@@ -50,8 +50,24 @@ const htmlToText = (html) =>
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
     .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
 
-const makeSnippet = (parsed) =>
-  (parsed?.text || htmlToText(parsed?.html) || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+// Drop link clutter from a preview: [text](url) keeps the text; [https://...], <https://...> and bare URLs go.
+const cleanForSnippet = (s) =>
+  String(s || '')
+    .replace(/\[([^\]]+)\]\((?:https?:|cid:|mailto:)[^)]*\)/gi, '$1')
+    .replace(/\[\s*(?:https?:\/\/|cid:)[^\]]*\]/gi, ' ')
+    .replace(/\[(?:image|img)\b[^\]]*\]/gi, ' ')
+    .replace(/<(?:https?:\/\/|mailto:)[^>]*>/gi, ' ')
+    .replace(/(?:https?:\/\/|www\.)\S+/gi, ' ')
+    .replace(/\s+/g, ' ').trim();
+
+// Uses the plain-text part; if that is only links, falls back to the readable text of the HTML part.
+const makeSnippet = (parsed) => {
+  for (const src of [parsed?.text, htmlToText(parsed?.html)]) {
+    const c = cleanForSnippet(src);
+    if (c) return c.slice(0, 160);
+  }
+  return '';
+};
 
 // ---- Firestore archive (optional) -------------------------------------------
 // Set FIREBASE_SERVICE_ACCOUNT to the service-account JSON (raw or base64).

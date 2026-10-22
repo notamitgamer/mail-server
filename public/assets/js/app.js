@@ -48,6 +48,33 @@ const toast = (msg) => {
   toast.timer = setTimeout(() => t.removeClass('show'), 3500);
 };
 const plain = (m) => (m.text || (m.html ? (new DOMParser().parseFromString(m.html, 'text/html').body.textContent || '') : '')).trim();
+// List preview: drop link clutter ("[https://cdn...]", bare URLs) from snippets already saved, keeping readable text.
+const cleanSnippet = (s) => String(s || '')
+  .replace(/\[([^\]]+)\]\((?:https?:|cid:|mailto:)[^)]*\)/gi, '$1')
+  .replace(/\[\s*(?:https?:\/\/|cid:)[^\]]*\]/gi, ' ')
+  .replace(/\[(?:image|img)\b[^\]]*\]/gi, ' ')
+  .replace(/<(?:https?:\/\/|mailto:)[^>]*>/gi, ' ')
+  .replace(/(?:https?:\/\/|www\.)\S+/gi, ' ')
+  .replace(/\s+/g, ' ').trim();
+const previewOf = (m) => {
+  const c = cleanSnippet(m.snippet);
+  if (!c) return '(no preview)';
+  const first = /^.*?[.!?](?=\s|$)/.exec(c); // first readable sentence when the text is long
+  return first && c.length > 140 ? first[0] : c;
+};
+const dayLabel = (iso) => {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const d = new Date(iso); d.setHours(0, 0, 0, 0);
+  const diff = Math.round((t - d) / 864e5);
+  return diff <= 0 ? 'Today' : diff === 1 ? 'Yesterday' : 'Earlier';
+};
+const EMPTY = {
+  inbox: ['ri-mail-check-line', 'Inbox zero', 'Nothing new. Enjoy the quiet.'],
+  sent: ['ri-send-plane-2-line', 'Nothing sent yet', 'Messages you send will show up here.'],
+  search: ['ri-search-line', 'No matches', 'Try a different word.'],
+};
+const skelRows = (n) => Array.from({ length: n }, () => '<li class="mail-row skel-row" aria-hidden="true"><div class="mail-item"><span class="skel skel-avatar"></span>'
+  + '<div class="mail-item-body"><span class="skel skel-line w40"></span><span class="skel skel-line w75"></span><span class="skel skel-line w90"></span></div></div></li>').join('');
 
 // ---------- offline store (IndexedDB) ----------
 // Mail is kept on this device, like Gmail's offline mode. IndexedDB instead of localStorage:
@@ -272,15 +299,25 @@ function setUnread(n) {
 function renderList() {
   const q = $('#search').val().trim().toLowerCase();
   const items = state.mails.filter((m) => !q || `${m.subject} ${m.from} ${m.snippet}`.toLowerCase().includes(q));
-  const $ul = $('#mailGroup').empty();
-  if (!items.length) $ul.append(`<li class="list-empty">${state.loading ? 'Loading…' : 'No mail here'}</li>`);
+  const $ul = $('#mailGroup').empty().attr('aria-busy', String(Boolean(state.loading && !items.length)));
+  if (!items.length && state.loading) $ul.append(skelRows(7));
+  else if (!items.length) {
+    const [icon, title, hint] = q ? EMPTY.search : EMPTY[state.folder];
+    $ul.append(`<li class="list-empty"><i class="${icon}" aria-hidden="true"></i><strong>${title}</strong><span>${hint}</span></li>`);
+  }
+  let lastDay = '';
   items.forEach((m) => {
     const sent = state.folder === 'sent';
-    $ul.append(`<li class="mail-item${m.read ? '' : ' unread'}${m.id === state.openId ? ' active' : ''}" data-id="${esc(m.id)}">`
+    const day = dayLabel(m.date);
+    if (day !== lastDay) { lastDay = day; $ul.append(`<li class="mail-day" role="presentation">${day}</li>`); }
+    $ul.append(`<li class="mail-row" data-dir=""><div class="swipe-bg" aria-hidden="true">`
+      + (sent ? '' : `<span class="swipe-read"><i class="${m.read ? 'ri-mail-unread-line' : 'ri-mail-open-line'}"></i>${m.read ? 'Unread' : 'Read'}</span>`)
+      + '<span class="swipe-del">Delete<i class="ri-delete-bin-line"></i></span></div>'
+      + `<div class="mail-item${m.read ? '' : ' unread'}${m.id === state.openId ? ' active' : ''}" data-id="${esc(m.id)}" role="button" tabindex="0">`
       + avatar(sent ? m.to[0] : m.from)
-      + `<div class="mail-item-body"><div class="d-flex align-items-center"><span class="mail-sender">${esc(sent ? 'To: ' + (m.to[0] || '') : label(m.from))}</span>`
+      + `<div class="mail-item-body"><div class="d-flex align-items-center"><span class="mail-sender">${m.read ? '' : '<span class="visually-hidden">Unread. </span>'}${esc(sent ? 'To: ' + (m.to[0] || '') : label(m.from))}</span>`
       + `<span class="mail-time">${esc(fmtDate(m.date))}</span></div>`
-      + `<h6 class="mail-subject">${esc(m.subject)}</h6><p class="mail-text">${esc(m.snippet)}</p></div></li>`);
+      + `<h6 class="mail-subject">${esc(m.subject)}</h6><p class="mail-text">${esc(previewOf(m))}</p></div></div></li>`);
   });
   if (state.hasMore && !q) $ul.append('<li class="load-more"><button id="loadMore" class="btn btn-sm btn-outline-primary">Load more</button></li>');
   renderStatus();
@@ -467,7 +504,8 @@ async function openMail(id) {
   state.openId = id;
   $('#mailGroup .mail-item').removeClass('active').filter((i, el) => el.dataset.id === id).addClass('active');
   showReader();
-  $('#rSubject').text('Loading…'); $('#rBody').empty(); $('#rAttach').empty();
+  $('#rSubject').html('<span class="skel skel-line w75 skel-title" role="status" aria-label="Loading"></span>');
+  $('#rBody').html('<span class="skel skel-line w90"></span><span class="skel skel-line w75"></span><span class="skel skel-line w60"></span>'); $('#rAttach').empty();
   const m = await store.get(folder, id);
   if (state.openId !== id) return;
   if (!m) { $('#rSubject').text(''); return toast('This message is not saved on this device yet.'); }
@@ -611,8 +649,8 @@ const resendUrl = (m, folder) => {
   return id ? 'https://resend.com/emails/' + encodeURIComponent(id) : null;
 };
 
-async function deleteMail() {
-  const m = state.openMail; const folder = state.folder;
+async function deleteMail(id) { // id: a row swiped in the list; none: the message open in the reader
+  const m = id ? { id } : state.openMail; const folder = state.folder;
   if (!m) return;
   if (!navigator.onLine) return toast('Go online to delete mail.');
   if (!(await askConfirm({ title: 'Delete message?', message: 'It is removed from every device and cannot be recovered.', ok: 'Delete', danger: true }))) return;
@@ -628,9 +666,31 @@ async function deleteMail() {
     meta.app.pendingRead = meta.app.pendingRead.filter((x) => x !== m.id);
     await saveMeta('app');
   }
-  hideReader();
+  if (!id || state.openId === id) hideReader();
   await showFolder();
   toast('Deleted');
+}
+
+// Swipe action: flip one inbox message between read and unread (same server calls as opening / "Mark as unread").
+async function toggleReadById(id) {
+  if (state.folder !== 'inbox') return;
+  const row = await store.get('inbox', id);
+  if (!row) return;
+  if (row.read) {
+    if (!navigator.onLine) return toast('Go online to change this.');
+    try { await api(`/api/mails/${encodeURIComponent(id)}/unread`, { method: 'POST' }); } catch (e) { return toast(e.message); }
+    meta.app.pendingRead = meta.app.pendingRead.filter((x) => x !== id);
+    await store.patch('inbox', id, { read: false });
+    meta.app.unread += 1;
+  } else {
+    await store.patch('inbox', id, { read: true });
+    meta.app.unread = Math.max(0, meta.app.unread - 1);
+    if (!meta.app.pendingRead.includes(id)) meta.app.pendingRead.push(id);
+    if (navigator.onLine && authUser) flushReads().catch(() => {}); // offline: sent on the next sync
+  }
+  await saveMeta('app');
+  await showFolder();
+  toast(row.read ? 'Marked as unread' : 'Marked as read');
 }
 
 async function markUnread() {
@@ -742,7 +802,8 @@ const b64ToBytes = (s) => {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 };
 const bellState = (on) => {
-  const $b = $('#btnNotify').toggleClass('on', on).attr('title', on ? 'Notifications on (tap to turn off)' : 'Turn on notifications');
+  const $b = $('#btnNotify').toggleClass('on', on).attr('title', on ? 'Notifications on (tap to turn off)' : 'Turn on notifications')
+    .attr('aria-label', on ? 'Turn off notifications' : 'Turn on notifications');
   $b.find('i').attr('class', on ? 'ri-notification-3-fill' : 'ri-notification-off-line');
 };
 async function currentPush() {
@@ -798,7 +859,77 @@ if ('serviceWorker' in navigator) {
 $('#btnNotify').on('click', (e) => { e.preventDefault(); togglePush(); });
 
 // ---------- events ----------
-$('#mailGroup').on('click', '.mail-item', function (e) { e.preventDefault(); openMail(this.dataset.id); });
+$('#mailGroup').on('click', '.mail-item', function (e) {
+  e.preventDefault();
+  if (Date.now() - touch.swipedAt < 400) return; // the finger-lift after a swipe is not a tap
+  openMail(this.dataset.id);
+});
+$('#mailGroup').on('keydown', '.mail-item', function (e) {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openMail(this.dataset.id); }
+});
+
+// ---------- touch: swipe a row (right = read/unread, left = delete) and pull the list down to refresh ----------
+const touch = { x: 0, y: 0, dx: 0, dy: 0, mode: null, row: null, swipedAt: 0 };
+const SWIPE_AT = 90; const SWIPE_MAX = 130; const PULL_AT = 70;
+const mailGroupEl = document.getElementById('mailGroup');
+const ptrEl = document.getElementById('ptr');
+const slide = (el, x, animate) => { el.style.transition = animate ? 'transform .2s ease' : 'none'; el.style.transform = x ? `translateX(${x}px)` : ''; };
+const pullTo = (px, animate) => {
+  mailGroupEl.style.transition = animate ? 'transform .2s ease' : 'none';
+  mailGroupEl.style.transform = px ? `translateY(${px}px)` : '';
+  ptrEl.style.opacity = String(Math.min(1, px / PULL_AT));
+  ptrEl.firstElementChild.style.transform = `rotate(${px * 4}deg)`;
+};
+mailGroupEl.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1) { touch.mode = null; return; }
+  const t = e.touches[0];
+  touch.x = t.clientX; touch.y = t.clientY; touch.dx = 0; touch.dy = 0; touch.mode = 'wait';
+  const it = e.target.closest('.mail-item');
+  touch.row = it && !it.closest('.skel-row') ? it.closest('.mail-row') : null;
+}, { passive: true });
+mailGroupEl.addEventListener('touchmove', (e) => {
+  if (!touch.mode) return;
+  const t = e.touches[0];
+  touch.dx = t.clientX - touch.x; touch.dy = t.clientY - touch.y;
+  if (touch.mode === 'wait') {
+    if (Math.abs(touch.dx) < 8 && Math.abs(touch.dy) < 8) return;
+    if (Math.abs(touch.dx) > Math.abs(touch.dy) && touch.row) touch.mode = 'swipe';
+    else if (touch.dy > 0 && mailGroupEl.scrollTop <= 0) touch.mode = 'pull';
+    else { touch.mode = null; return; }
+  }
+  if (touch.mode === 'swipe') {
+    e.preventDefault();
+    let dx = Math.max(-SWIPE_MAX, Math.min(SWIPE_MAX, touch.dx));
+    if (dx > 0 && (state.folder !== 'inbox')) dx = 0; // Sent has no read/unread
+    touch.row.dataset.dir = dx > 0 ? 'read' : dx < 0 ? 'del' : '';
+    touch.row.classList.toggle('armed', Math.abs(dx) >= SWIPE_AT);
+    slide(touch.row.querySelector('.mail-item'), dx, false);
+  } else if (touch.mode === 'pull') {
+    e.preventDefault();
+    pullTo(Math.min(110, touch.dy * 0.5), false);
+  }
+}, { passive: false });
+const touchEnd = (e) => {
+  const cancelled = e.type === 'touchcancel'; // the system took the touch (gesture, call...): snap back, run nothing
+  const mode = touch.mode; touch.mode = null;
+  const animate = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (mode === 'swipe') {
+    const row = touch.row; const item = row.querySelector('.mail-item');
+    const id = item.dataset.id; const dx = Math.max(-SWIPE_MAX, Math.min(SWIPE_MAX, touch.dx));
+    touch.swipedAt = Date.now();
+    slide(item, 0, animate);
+    row.classList.remove('armed');
+    if (cancelled) return;
+    if (dx <= -SWIPE_AT) deleteMail(id);
+    else if (dx >= SWIPE_AT && state.folder === 'inbox') toggleReadById(id);
+  } else if (mode === 'pull') {
+    const pulled = Math.min(110, touch.dy * 0.5);
+    pullTo(0, animate);
+    if (!cancelled && pulled >= PULL_AT) syncAll({ reconcile: true, manual: true });
+  }
+};
+mailGroupEl.addEventListener('touchend', touchEnd);
+mailGroupEl.addEventListener('touchcancel', touchEnd);
 $('#mailGroup').on('click', '#loadMore', loadMore);
 $('#search').on('input', renderList);
 $('#refresh').on('click', (e) => { e.preventDefault(); syncAll({ reconcile: true, manual: true }); });

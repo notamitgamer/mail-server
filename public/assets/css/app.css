@@ -180,3 +180,84 @@ input[type="checkbox"] { accent-color: var(--peach); }
   #printArea .print-head { border-bottom: 1px solid #999; margin-bottom: 16px; padding-bottom: 8px; font-size: 13px; }
   #printArea .print-head h2 { font-size: 20px; margin: 0 0 8px; }
 }
+
+/* ---- self-hosted Lexend (variable weight); replaces the Google Fonts @import, works offline via sw.js ---- */
+@font-face { font-family: 'Lexend'; font-style: normal; font-weight: 100 900; font-display: swap; src: url('../fonts/lexend-latin-ext.woff2') format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Lexend'; font-style: normal; font-weight: 100 900; font-display: swap; src: url('../fonts/lexend-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+/* ---- phone notch and gesture bar (index.html uses viewport-fit=cover) ---- */
+.mailbox-header { padding-top: calc(10px + env(safe-area-inset-top)); padding-left: calc(10px + env(safe-area-inset-left)); }
+.mailbox-header .mail-avatar { top: calc(18px + env(safe-area-inset-top)); right: calc(18px + env(safe-area-inset-right)); }
+.mailbox-option { padding-left: calc(10px + env(safe-area-inset-left)); padding-right: calc(10px + env(safe-area-inset-right)); }
+.mail-group { padding-bottom: calc(80px + env(safe-area-inset-bottom)); padding-left: calc(10px + env(safe-area-inset-left)); padding-right: calc(10px + env(safe-area-inset-right)); box-sizing: border-box; overscroll-behavior-y: contain; }
+.mailcontent-subject { padding-top: calc(10px + env(safe-area-inset-top)); }
+.mailcontent-footer { padding-bottom: calc(15px + env(safe-area-inset-bottom)); }
+.sidebar-header { padding-top: env(safe-area-inset-top); box-sizing: content-box; }
+.menu-compose { bottom: calc(15px + env(safe-area-inset-bottom)); right: calc(15px + env(safe-area-inset-right)); }
+.toast-msg { bottom: calc(24px + env(safe-area-inset-bottom)); }
+.compose-footer { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+@media (min-width: 768px) {
+  .mailbox-header .mail-avatar { top: calc(28px + env(safe-area-inset-top)); right: calc(30px + env(safe-area-inset-right)); }
+  .mailbox-option { padding-left: 20px; padding-right: 20px; }
+  .mail-group { padding-left: 20px; padding-right: 20px; }
+  .menu-compose { right: calc(25px + env(safe-area-inset-right)); bottom: calc(25px + env(safe-area-inset-bottom)); }
+}
+
+/* ---- list rows: wrapper for swipe, date headers, stronger unread ---- */
+.mail-row { list-style: none; position: relative; border-radius: 5px; }
+.mail-row + .mail-row { margin-top: 2px; }
+.mail-row .mail-item { margin-top: 0; position: relative; z-index: 1; touch-action: pan-y; }
+.mail-day { list-style: none; padding: 14px 6px 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--overlay1); }
+.mail-day:first-child { padding-top: 4px; }
+.mail-item.unread::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--peach); }
+.mail-item.unread .mail-sender, .mail-item.unread .mail-subject { font-weight: 600; }
+.mail-item.unread .mail-time { color: var(--peach); font-weight: 600; }
+.mail-item:not(.unread) .mail-sender, .mail-item:not(.unread) .mail-subject { font-weight: 400; }
+.mail-item:focus-visible, .mailbox-option .pager:focus-visible, .mailbox-menu:focus-visible, .mail-avatar:focus-visible,
+.menu-compose:focus-visible, .mailcontent-subject .nav-link:focus-visible, .mailcontent-header .nav-link:focus-visible, .compose-header .nav-link:focus-visible {
+  outline: 2px solid var(--peach); outline-offset: -2px;
+}
+.menu-compose:focus-visible { outline-offset: 3px; }
+
+/* swipe backgrounds (revealed under the row) */
+.swipe-bg { position: absolute; inset: 0; border-radius: 5px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; font-size: 13px; font-weight: 600; color: var(--crust); visibility: hidden; }
+.mail-row[data-dir="read"] .swipe-bg, .mail-row[data-dir="del"] .swipe-bg { visibility: visible; }
+.swipe-bg span { display: none; align-items: center; gap: 8px; }
+.swipe-bg i { font-size: 20px; }
+.mail-row[data-dir="read"] .swipe-bg { background: var(--blue); }
+.mail-row[data-dir="read"] .swipe-read { display: flex; }
+.mail-row[data-dir="del"] .swipe-bg { background: var(--red); justify-content: flex-end; }
+.mail-row[data-dir="del"] .swipe-del { display: flex; }
+.mail-row.armed .swipe-bg { filter: brightness(1.12); }
+
+/* pull to refresh */
+.ptr { position: relative; height: 0; z-index: 0; text-align: center; opacity: 0; pointer-events: none; }
+.ptr i { position: absolute; left: 50%; top: 6px; margin-left: -14px; width: 28px; height: 28px; line-height: 28px; font-size: 18px; border-radius: 50%; background: var(--surface0); color: var(--peach); }
+.mail-group { will-change: transform; }
+
+/* ---- loading skeletons and empty states ---- */
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.skel { display: block; border-radius: 6px; background: linear-gradient(90deg, var(--surface0) 25%, var(--surface1) 37%, var(--surface0) 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; }
+.skel-line { height: 12px; margin: 8px 0; }
+.skel-avatar { width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; }
+.skel-title { height: 22px; width: 70%; margin: 6px 0 0 5px; }
+.skel.w40 { width: 40%; } .skel.w60 { width: 60%; } .skel.w75 { width: 75%; } .skel.w90 { width: 90%; }
+.skel-row { pointer-events: none; }
+.skel-row .mail-item { background: var(--mantle); }
+#rBody > .skel { margin: 12px 4px; }
+.list-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 64px 24px; }
+.list-empty i { font-size: 56px; line-height: 1; color: var(--surface2); }
+.list-empty strong { font-size: 17px; font-weight: 500; color: var(--subtext1); }
+.list-empty span { font-size: 13px; color: var(--overlay1); }
+
+/* ---- visible Back button in the reader (phones/tablets; the template hides it on desktop) ---- */
+#mailBack { width: auto; height: 40px; padding: 0 14px 0 8px; gap: 4px; font-size: 14px; background-color: var(--surface0); border: 1px solid var(--surface1); border-radius: 20px; color: var(--text); }
+#mailBack:hover, #mailBack:focus { background-color: var(--surface1); }
+#mailBack i { font-size: 22px; }
+.mailcontent-subject .nav-link#mailBack { width: auto; }
+
+/* ---- reduced motion: no slide/fade/spin/shimmer (the template slides panels over 0.3s) ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .01ms !important; transition-delay: 0s !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+  .spin { opacity: .55; }
+}
