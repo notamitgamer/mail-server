@@ -150,6 +150,11 @@ input[type="checkbox"] { accent-color: var(--peach); }
 
 /* ---- sign-in, toast, scrollbars, small bits ---- */
 .signin { position: fixed; inset: 0; z-index: 2000; background: var(--base); display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+/* Required-notifications prompt: same full-screen look as the sign-in screen, one layer lower so sign-in always wins */
+.notify-gate { z-index: 1990; }
+.notify-gate-icon { display: block; font-size: 44px; line-height: 1; color: var(--peach); margin-bottom: 14px; }
+.notify-gate .btn { margin-top: 6px; }
+.notify-gate .signin-note { margin-top: 14px; min-height: 1.6em; color: var(--yellow); }
 .signin h3 { margin-bottom: 8px; color: var(--text); }
 .signin h3 strong { color: var(--peach); }
 .signin > div { max-width: 440px; }

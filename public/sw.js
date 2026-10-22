@@ -1,6 +1,6 @@
 // Service worker: keeps the app itself (shell + Firebase sign-in code) available offline.
 // Your mail is NOT stored here; app.js keeps it in IndexedDB. Bump CACHE when shipping changes to cached files.
-const CACHE = 'mail-shell-v15';
+const CACHE = 'mail-shell-v16';
 const SHELL = [
   '/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png',
   '/assets/css/style.min.css', '/assets/css/app.css', '/assets/js/app.js',
@@ -61,6 +61,38 @@ self.addEventListener('fetch', (event) => {
 
 // ---- Push: the server sends one for each new mail. The push service holds it while the phone is
 // offline and delivers it on reconnect, even if the app is closed. ----
+// Save the new mail into the app's own IndexedDB as soon as its push arrives, so tapping the notification
+// opens it at once instead of waiting for a sync. Same database and row layout as app.js (keep both in step).
+const idbp = (r) => new Promise((ok, fail) => { r.onsuccess = () => ok(r.result); r.onerror = () => fail(r.error); });
+const openMailDb = () => new Promise((ok) => {
+  const r = indexedDB.open('mailbox', 1);
+  r.onupgradeneeded = () => {
+    r.result.createObjectStore('mails', { keyPath: 'key' }).createIndex('byDate', ['folder', 'ts']);
+    r.result.createObjectStore('meta');
+  };
+  r.onsuccess = () => ok(r.result);
+  r.onerror = () => ok(null);
+});
+async function saveMailFromPush(id, token) { // never throws: if it fails, the app syncs the mail when opened
+  if (!id || !token) return;
+  let db = null;
+  try {
+    db = await openMailDb();
+    if (!db) return;
+    const key = 'inbox:' + id;
+    if (await idbp(db.transaction('mails').objectStore('mails').get(key))) return; // already saved
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 20000);
+    const res = await fetch('/api/push/mail/' + encodeURIComponent(id), { headers: { 'X-Push-Token': token }, cache: 'no-store', signal: ctl.signal });
+    clearTimeout(timer);
+    if (!res.ok) return;
+    const m = await res.json();
+    const t = db.transaction('mails', 'readwrite');
+    t.objectStore('mails').put({ ...m, folder: 'inbox', key, ts: Date.parse(m.date) });
+    await new Promise((ok, fail) => { t.oncomplete = ok; t.onerror = () => fail(t.error); t.onabort = () => fail(t.error); });
+  } catch (e) { /* ignore */ } finally { if (db) db.close(); }
+}
+
 self.addEventListener('push', (event) => {
   let d = {};
   try { d = event.data ? event.data.json() : {}; } catch (e) { d = { body: event.data ? event.data.text() : '' }; }
@@ -70,12 +102,16 @@ self.addEventListener('push', (event) => {
       wins.forEach((c) => c.postMessage({ type: 'new-mail' }));
       return;
     }
-    await self.registration.showNotification(d.title || 'New mail', {
-      body: d.body || '',
-      icon: '/icons/icon-192.png',
-      tag: d.id ? 'mail-' + d.id : 'mail-test',
-      data: { id: d.id || null },
-    });
+    // The notification appears right away; the mail is saved alongside it.
+    await Promise.all([
+      self.registration.showNotification(d.title || 'New mail', {
+        body: d.body || '',
+        icon: '/icons/icon-192.png',
+        tag: d.id ? 'mail-' + d.id : 'mail-test',
+        data: { id: d.id || null },
+      }),
+      saveMailFromPush(d.id, d.t),
+    ]);
   })());
 });
 

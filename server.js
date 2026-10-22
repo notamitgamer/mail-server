@@ -40,6 +40,26 @@ try {
 // How long the push service keeps an undelivered push (a phone that is offline gets it on reconnect).
 const PUSH_TTL = 7 * 24 * 3600;
 
+// Each push carries a read token for that one mail, so the service worker can save the mail on the phone
+// the moment the push arrives (it has no sign-in) and tapping the notification opens it at once.
+// The token travels only inside the encrypted push, is bound to the mail id by an HMAC, and expires a day after the push does.
+const MAIL_TOKEN_KEY = pushEnabled ? crypto.createHmac('sha256', process.env.VAPID_PRIVATE_KEY.trim()).update('mail-token-v1').digest() : null;
+const mailTokenSig = (id, exp) => crypto.createHmac('sha256', MAIL_TOKEN_KEY).update(`${id}.${exp}`).digest();
+const signMailToken = (id) => {
+  if (!MAIL_TOKEN_KEY) return null;
+  const exp = Date.now() + (PUSH_TTL + 24 * 3600) * 1000;
+  return `${exp}.${mailTokenSig(id, exp).toString('base64url')}`;
+};
+const checkMailToken = (id, token) => {
+  if (!MAIL_TOKEN_KEY || typeof token !== 'string') return false;
+  const [expStr, sig] = token.split('.');
+  const exp = Number(expStr);
+  if (!sig || !Number.isFinite(exp) || exp < Date.now()) return false;
+  const want = mailTokenSig(id, exp);
+  const got = Buffer.from(sig, 'base64url');
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+};
+
 // Plain-text version of an HTML body (used for snippets and the text part of sent mail).
 const htmlToText = (html) =>
   String(html || '')
@@ -158,6 +178,7 @@ const sendPush = ({ emailId, from, subject, snippet }) => {
     title: sender || 'New mail',
     body: (subject + (snippet ? ' - ' + snippet : '')).slice(0, 200),
     id: emailId,
+    t: signMailToken(emailId),
   });
 };
 
@@ -517,6 +538,18 @@ app.post('/api/mails/:id/forward', requireOwner, express.json({ limit: '10kb' })
     resendId: data?.id || null, inReplyTo: null, attachments: [],
   });
   return res.json({ ok: true, id: ref.id });
+}));
+
+// Read one inbox mail with the token from its push. Not behind sign-in on purpose: the service worker has no
+// Firebase session. Without a valid token for this exact id it answers 403.
+app.get('/api/push/mail/:id', handle(async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Mailbox is not configured' });
+  if (!ID_RE.test(req.params.id) || !checkMailToken(req.params.id, req.get('x-push-token'))) {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
+  const snap = await db.collection(FOLDERS.inbox.collection).doc(req.params.id).get();
+  if (!snap.exists) return res.status(404).json({ error: 'Not found' });
+  return res.set('Cache-Control', 'no-store').json(toFull(snap.id, snap.data(), 'inbox'));
 }));
 
 // ---- Push subscriptions (one document per browser or phone) ------------------

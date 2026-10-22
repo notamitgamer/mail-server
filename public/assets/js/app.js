@@ -248,7 +248,12 @@ async function boot() {
   if (saved && saved.firebase) {
     // Known device: paint saved mail now, then bring up Firebase and the server in the background.
     config = saved;
-    if (hint) openApp(hint);
+    if (hint) {
+      openApp(hint).then(async () => { // opened from a notification: the push already saved the mail, so show it now, before sign-in finishes
+        const id = wantedMail();
+        if (id && await store.get('inbox', id)) { history.replaceState(null, '', location.pathname); openInboxMail(id, { sync: false }); }
+      }).catch(() => {});
+    }
     initAuth().catch(() => { if (!hint) showSignin('Could not load sign-in. Are you offline?', false); });
     fetchConfig().then((c) => { config = c; }).catch(() => {});
     return;
@@ -273,11 +278,14 @@ function openApp(email) {
 async function start(user) {
   localStorage.setItem('mb_user', user.email || 'me');
   await openApp(user.email);
+  initPush().catch(() => {}); // notifications are required: asks for them here if they are not on yet
+  const wanted = wantedMail(); // opened from a notification
+  if (wanted) history.replaceState(null, '', location.pathname);
+  if (wanted && await store.get('inbox', wanted)) await openInboxMail(wanted, { sync: false }); // already on this phone: show it now, sync after
   await syncAll({ reconcile: true });
-  initPush().catch(() => {});
-  const wanted = new URLSearchParams(location.search).get('mail'); // opened from a notification
-  if (wanted) { history.replaceState(null, '', location.pathname); openInboxMail(wanted); }
+  if (wanted && state.openId !== wanted) openInboxMail(wanted, { sync: false }); // it had to be fetched first
 }
+const wantedMail = () => new URLSearchParams(location.search).get('mail'); // set when the app is opened from a notification
 
 // ---------- list ----------
 const COLORS = ['green', 'blue', 'indigo', 'red', 'yellow'];
@@ -802,8 +810,8 @@ const b64ToBytes = (s) => {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 };
 const bellState = (on) => {
-  const $b = $('#btnNotify').toggleClass('on', on).attr('title', on ? 'Notifications on (tap to turn off)' : 'Turn on notifications')
-    .attr('aria-label', on ? 'Turn off notifications' : 'Turn on notifications');
+  const $b = $('#btnNotify').toggleClass('on', on).attr('title', on ? 'Notifications are on (tap to send a test)' : 'Notifications are off')
+    .attr('aria-label', on ? 'Send a test notification' : 'Notifications are off');
   $b.find('i').attr('class', on ? 'ri-notification-3-fill' : 'ri-notification-off-line');
 };
 async function currentPush() {
@@ -812,41 +820,87 @@ async function currentPush() {
 }
 const subscribeNow = (reg) => reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(config.vapidPublicKey) });
 const savePushSub = (sub) => api('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub.toJSON() }) });
+const sameKey = (sub, key) => { // was this subscription made with the server's current key?
+  const a = sub.options && sub.options.applicationServerKey;
+  if (!a) return true;
+  const x = new Uint8Array(a); const y = b64ToBytes(key);
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+};
 
-async function initPush() { // after sign-in: show the bell and keep the saved subscription fresh
-  if (!pushSupported()) return;
-  $('#btnNotify').removeClass('d-none');
-  if (Notification.permission !== 'granted') return bellState(false);
+// Notifications are required: until they are on, a full-screen prompt covers the app.
+function showGate(kind, note) { // kind: 'ask' (not asked yet) or 'blocked' (turned off in settings)
+  const blocked = kind === 'blocked';
+  $('#notifyGate').removeClass('d-none');
+  $('#ngTitle').text(blocked ? 'Notifications are blocked' : 'Turn on notifications');
+  $('#ngText').text(blocked
+    ? 'Open this app’s or site’s settings, set Notifications to Allow, then come back and tap the button.'
+    : 'New mail arrives as a notification, and tapping it opens the mail straight away. Notifications must be on to use this app.');
+  $('#ngAllow').text(blocked ? 'I’ve allowed them' : 'Allow notifications');
+  $('#ngNote').text(note || '');
+}
+const hideGate = () => $('#notifyGate').addClass('d-none');
+
+async function activatePush() { // permission is granted: make sure there is a live subscription and the server has it
   const { reg, sub } = await currentPush();
-  const active = sub || (config.vapidPublicKey ? await subscribeNow(reg) : null);
-  if (active) await savePushSub(active);
-  bellState(Boolean(active));
+  let active = sub;
+  if (active && config.vapidPublicKey && !sameKey(active, config.vapidPublicKey)) { // the server's key changed (an update): start over
+    await active.unsubscribe().catch(() => {});
+    active = null;
+  }
+  if (!active) active = await subscribeNow(reg);
+  await savePushSub(active);
 }
 
-async function togglePush() {
-  if (!pushSupported()) return toast('Push is not supported here. On iPhone, add the app to the Home Screen first.');
-  if (!navigator.onLine) return toast('Go online to change notifications.');
+let pushBusy = false;
+async function initPush() { // after sign-in and every time the app comes back to the front: keep notifications on
+  if (pushBusy || !pushSupported() || !config || !config.vapidPublicKey) return; // not supported here (e.g. an iPhone browser tab) or the server has push off
+  pushBusy = true;
   try {
-    const { reg, sub } = await currentPush();
-    if (sub) { // turn off
-      await api('/api/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }) });
-      await sub.unsubscribe();
-      bellState(false);
-      return toast('Notifications off');
-    }
-    if (!config.vapidPublicKey) return toast('Push is not set up on the server (VAPID keys missing).');
-    if ((await Notification.requestPermission()) !== 'granted') return toast('Notifications are blocked. Allow them in the app or site settings.');
-    await savePushSub(await subscribeNow(reg));
+    $('#btnNotify').removeClass('d-none');
+    if (Notification.permission !== 'granted') { bellState(false); return showGate(Notification.permission === 'denied' ? 'blocked' : 'ask'); }
+    hideGate();
+    if (!navigator.onLine) return;
+    await activatePush();
     bellState(true);
-    await api('/api/push/test', { method: 'POST' }); // a notification should appear in a moment
-    return toast('Notifications on');
-  } catch (e) { return toast('Could not change notifications: ' + e.message); }
+  } catch (e) {
+    bellState(false);
+    if (navigator.onLine) toast('Could not set up notifications: ' + e.message);
+  } finally { pushBusy = false; }
 }
 
-async function openInboxMail(id) {
+$('#ngAllow').on('click', async () => {
+  const $b = $('#ngAllow').prop('disabled', true);
+  try {
+    if (Notification.permission !== 'granted') await Notification.requestPermission();
+    if (Notification.permission === 'denied') return showGate('blocked');
+    if (Notification.permission !== 'granted') return showGate('ask', 'Tap Allow in the prompt to continue.');
+    if (!navigator.onLine) return showGate('ask', 'Connect to the internet to finish turning on notifications.');
+    await activatePush();
+    hideGate(); bellState(true);
+    api('/api/push/test', { method: 'POST' }).catch(() => {}); // a notification should appear in a moment
+  } catch (e) { showGate('ask', 'Could not turn on notifications: ' + e.message); }
+  finally { $b.prop('disabled', false); }
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && authUser) initPush().catch(() => {}); }); // e.g. back from settings
+
+async function testPush() { // the bell: notifications cannot be turned off here, it only sends a test
+  if (!$('#btnNotify').hasClass('on')) return initPush();
+  if (!navigator.onLine) return toast('Go online to send a test.');
+  try { await api('/api/push/test', { method: 'POST' }); toast('Test notification sent'); } catch (e) { toast('Could not send a test: ' + e.message); }
+}
+
+// Opens a mail from a notification. When the push already saved it on this phone it shows at once and the
+// sync runs afterwards; only if it is not here yet does it sync first.
+async function openInboxMail(id, { sync = true } = {}) {
+  await appReady;
   if (state.folder !== 'inbox') $('#folders .nav-link[data-folder="inbox"]').trigger('click');
-  await syncAll();
-  openMail(id);
+  const saved = await store.get('inbox', id);
+  if (!saved) {
+    await syncAll();
+    while (syncing) await new Promise((r) => setTimeout(r, 100)); // a sync that was already running
+  }
+  await openMail(id);
+  if (saved && sync) syncAll().catch(() => {});
 }
 
 if ('serviceWorker' in navigator) {
@@ -856,7 +910,7 @@ if ('serviceWorker' in navigator) {
     if (d.type === 'open-mail' && d.id) openInboxMail(d.id);
   });
 }
-$('#btnNotify').on('click', (e) => { e.preventDefault(); togglePush(); });
+$('#btnNotify').on('click', (e) => { e.preventDefault(); testPush(); });
 
 // ---------- events ----------
 $('#mailGroup').on('click', '.mail-item', function (e) {
