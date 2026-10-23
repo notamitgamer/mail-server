@@ -1,6 +1,42 @@
-# mail-server
+<p align="center">
+  <img src="assets/logo.png" alt="mail-server logo" width="120">
+</p>
 
-A small, self-hosted mailbox for your own domain. [Resend](https://resend.com) receives the mail, the server stores it in [Firebase Firestore](https://firebase.google.com/docs/firestore), and an installable web app lets you read, reply, forward and send, with push notifications for new mail. Nothing is forwarded to a third-party inbox.
+<h1 align="center">mail-server</h1>
+
+<p align="center">
+  A small, self-hosted mailbox for your own domain, with push notifications.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-fab387?labelColor=1e1e2e"></a>
+  <img alt="Node.js 18 or newer" src="https://img.shields.io/badge/node-%3E%3D18-fab387?labelColor=1e1e2e">
+  <a href="https://docs.amit.is-a.dev/mail-server"><img alt="Documentation" src="https://img.shields.io/badge/docs-read-fab387?labelColor=1e1e2e"></a>
+</p>
+
+[Resend](https://resend.com) receives the mail, the server stores it in [Firebase Firestore](https://firebase.google.com/docs/firestore), and an installable web app lets you read, reply, forward and send, with push notifications for new mail. Nothing is forwarded to a third-party inbox.
+
+## Screenshots
+
+Shown with made-up demo mail.
+
+**Desktop**
+
+<table>
+  <tr>
+    <td align="center"><img src="assets/screenshots/desktop-signed-in.png" alt="Desktop, signed in"><br><sub>Signed in</sub></td>
+    <td align="center"><img src="assets/screenshots/desktop-signed-out.png" alt="Desktop, signed out"><br><sub>Signed out</sub></td>
+  </tr>
+</table>
+
+**Mobile**
+
+<table>
+  <tr>
+    <td align="center"><img src="assets/screenshots/mobile-signed-in.png" alt="Mobile, signed in" width="260"><br><sub>Signed in</sub></td>
+    <td align="center"><img src="assets/screenshots/mobile-signed-out.png" alt="Mobile, signed out" width="260"><br><sub>Signed out</sub></td>
+  </tr>
+</table>
 
 ## Features
 
