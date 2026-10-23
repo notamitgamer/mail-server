@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "express": "^4.19.0",
-    "firebase-admin": "^13.10.0",
+    "firebase-admin": "^14.5.0",
     "mailparser": "^3.7.0",
     "resend": "^6.0.0",
     "svix": "^1.24.0",
