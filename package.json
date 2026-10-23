@@ -2,6 +2,25 @@
   "name": "mail-server",
   "version": "2.0.0",
   "description": "Mailbox for mail@amit.is-a.dev: Resend webhook, Firestore storage, web app",
+  "license": "MIT",
+  "author": "Amit Dutta <mail@amit.is-a.dev>",
+  "homepage": "https://docs.amit.is-a.dev/mail-server",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/notamitgamer/mail-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/notamitgamer/mail-server/issues"
+  },
+  "keywords": [
+    "email",
+    "mail-server",
+    "self-hosted",
+    "resend",
+    "firebase",
+    "pwa",
+    "web-push"
+  ],
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
