@@ -380,3 +380,8 @@ input[type="checkbox"] { accent-color: var(--peach); }
 .btn-google:active { background: #2a2b2d; }
 .btn-google.d-none { display: none; }
 .signin-logo { border: 1px solid var(--surface0); }
+/* minimal notice: plain muted text, no box */
+.signin-note { padding: 0; background: none; border: 0; border-radius: 0; margin-top: 32px; font-size: 13px; line-height: 1.6; color: var(--overlay2); }
+.signin-note strong { color: var(--subtext1); font-weight: 500; }
+.signin-note p + p { margin-top: 6px; color: var(--overlay1); font-size: 12px; }
+.signin-credit { margin-top: 36px; }
