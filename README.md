@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-fab387?labelColor=1e1e2e"></a>
-  <img alt="Node.js 18 or newer" src="https://img.shields.io/badge/node-%3E%3D18-fab387?labelColor=1e1e2e">
-  <a href="https://docs.amit.is-a.dev/mail-server"><img alt="Documentation" src="https://img.shields.io/badge/docs-read-fab387?labelColor=1e1e2e"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-d0bcff?labelColor=141316"></a>
+  <img alt="Node.js 18 or newer" src="https://img.shields.io/badge/node-%3E%3D18-d0bcff?labelColor=141316">
+  <a href="https://docs.amit.is-a.dev/mail-server"><img alt="Documentation" src="https://img.shields.io/badge/docs-read-d0bcff?labelColor=141316"></a>
 </p>
 
 [Resend](https://resend.com) receives the mail, the server stores it in [Firebase Firestore](https://firebase.google.com/docs/firestore), and an installable web app lets you read, reply, forward and send, with push notifications for new mail. Nothing is forwarded to a third-party inbox.
@@ -43,6 +43,7 @@ Shown with made-up demo mail.
 - Receives mail through a Resend webhook and keeps it in your own Firestore database
 - Mobile-first web app (PWA) with offline cache, swipe actions and pull to refresh
 - Reply, forward and compose from your own addresses
+- All / Unread filter, one-click reader actions and keyboard shortcuts (`j`/`k` move, `r` reply, `c` compose, `/` search)
 - Web Push notifications that open the message straight away
 - Single-owner by design: sign in with one Google account
 
