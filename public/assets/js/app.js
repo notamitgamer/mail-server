@@ -289,7 +289,7 @@ const wantedMail = () => new URLSearchParams(location.search).get('mail'); // se
 const wantedToken = () => new URLSearchParams(location.search).get('t'); // read token of that mail, from its push
 
 // ---------- list ----------
-const COLORS = ['green', 'blue', 'indigo', 'red', 'yellow'];
+const COLORS = ['green', 'blue', 'indigo', 'red', 'yellow', 'pink', 'purple', 'slate'];
 function colorOf(who) {
   let h = 0;
   for (const c of label(who)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
@@ -325,9 +325,9 @@ function renderList() {
       + '<span class="swipe-del">Delete<i class="ri-delete-bin-line"></i></span></div>'
       + `<div class="mail-item${m.read ? '' : ' unread'}${m.id === state.openId ? ' active' : ''}" data-id="${esc(m.id)}" role="button" tabindex="0">`
       + avatar(sent ? m.to[0] : m.from)
-      + `<div class="mail-item-body"><div class="d-flex align-items-center"><span class="mail-sender">${m.read ? '' : '<span class="visually-hidden">Unread. </span>'}${esc(sent ? 'To: ' + (m.to[0] || '') : label(m.from))}</span>`
-      + `<span class="mail-time">${esc(fmtDate(m.date))}</span></div>`
-      + `<h6 class="mail-subject">${esc(m.subject)}</h6><p class="mail-text">${esc(previewOf(m))}</p></div></div></li>`);
+      + `<div class="mail-item-body"><div class="d-flex align-items-center"><h6 class="mail-subject">${m.read ? '' : '<span class="visually-hidden">Unread. </span>'}${esc(m.subject)}</h6>`
+      + `${(m.attachments || []).length ? '<i class="ri-attachment-2 mail-clip" aria-label="Has attachment"></i>' : ''}<span class="mail-time">${esc(fmtDate(m.date))}</span></div>`
+      + `<p class="mail-text"><span class="mail-sender">${esc(sent ? 'To: ' + (m.to[0] || '') : label(m.from))}</span> \u2013 ${esc(previewOf(m))}</p></div></div></li>`);
   });
   if (state.hasMore && !q) $ul.append('<li class="load-more"><button id="loadMore" class="btn btn-sm btn-outline-primary">Load more</button></li>');
   renderStatus();
@@ -440,7 +440,7 @@ const CLEAN = { WHOLE_DOCUMENT: true, FORBID_TAGS: ['meta', 'base', 'link', 'for
 const FRAME_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src https: data:"><base target="_blank">`;
 const FRAME_BASE = 'body{margin:0;padding:12px 4px;font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;word-wrap:break-word;overflow-x:auto}img{max-width:100%;height:auto}';
 const FRAME_LIGHT = `${FRAME_CSP}<style>html{background:#fff}${FRAME_BASE}body{color:#202124}a{color:#1a56db}</style>`;
-const FRAME_DARK = `${FRAME_CSP}<style>html{background:transparent;color-scheme:dark}${FRAME_BASE}body{color:#cdd6f4}a{color:#89b4fa}</style>`;
+const FRAME_DARK = `${FRAME_CSP}<style>html{background:transparent;color-scheme:dark}${FRAME_BASE}body{color:#e6e1e5}a{color:#d0bcff}</style>`;
 
 // Phone back button / swipe: the reader and the sidebar are "layers" with their own history entry,
 // so back closes the layer instead of leaving the site.
