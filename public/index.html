@@ -61,7 +61,7 @@
         <div class="appbar-titles"><strong id="folderTitle" class="appbar-title">Inbox</strong><small id="countText" role="status"></small></div>
         <div class="mailbox-search">
           <i class="ri-search-line"></i>
-          <input id="search" type="search" class="form-control" placeholder="Search loaded mail" aria-label="Search loaded mail">
+          <input id="search" type="search" class="form-control" placeholder="Search mail" aria-label="Search loaded mail">
         </div>
         <div class="appbar-actions">
           <a href="#" id="btnSearch" role="button" title="Search" aria-label="Search"><i class="ri-search-line" aria-hidden="true"></i></a>
@@ -81,20 +81,19 @@
     <div id="mailContent" class="mailcontent">
       <div class="mailcontent-subject d-none">
         <nav class="nav">
-          <a id="mailBack" href="#" class="nav-link" role="button" title="Back to list" aria-label="Back to list"><i class="ri-arrow-left-line" aria-hidden="true"></i><span>Back</span></a>
+          <a id="mailBack" href="#" class="nav-link" role="button" title="Back to list" aria-label="Back to list"><i class="ri-arrow-left-line" aria-hidden="true"></i></a>
+          <a href="#" id="btnReplyTop" class="nav-link quick" role="button" title="Reply" aria-label="Reply"><i class="ri-reply-line" aria-hidden="true"></i></a>
+          <a href="#" id="btnFwdTop" class="nav-link quick" role="button" title="Forward" aria-label="Forward"><i class="ri-share-forward-line" aria-hidden="true"></i></a>
+          <a href="#" id="btnUnreadTop" class="nav-link quick" role="button" title="Mark as unread" aria-label="Mark as unread"><i class="ri-mail-unread-line" aria-hidden="true"></i></a>
+          <span class="nav-sep" aria-hidden="true"></span>
+          <a href="#" id="btnDelTop" class="nav-link quick nav-danger" role="button" title="Delete" aria-label="Delete"><i class="ri-delete-bin-line" aria-hidden="true"></i></a>
           <div class="dropdown">
             <a href="#" id="btnMore" class="nav-link" data-bs-toggle="dropdown" aria-expanded="false" title="More" aria-label="More actions"><i class="ri-more-2-fill"></i></a>
             <div class="dropdown-menu dropdown-menu-end">
-              <a id="mnReply" href="#" class="dropdown-item"><i class="ri-reply-line"></i> Reply</a>
-              <a id="mnForward" href="#" class="dropdown-item"><i class="ri-share-forward-line"></i> Forward</a>
-              <a id="mnUnread" href="#" class="dropdown-item"><i class="ri-mail-unread-line"></i> Mark as unread</a>
-              <div class="dropdown-divider"></div>
               <a id="btnPdf" href="#" class="dropdown-item"><i class="ri-file-pdf-line"></i> Save as PDF</a>
               <a id="mnPrint" href="#" class="dropdown-item"><i class="ri-printer-line"></i> Print</a>
               <a id="mnShare" href="#" class="dropdown-item"><i class="ri-share-line"></i> Share</a>
               <a id="mnResend" href="#" class="dropdown-item" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> Open in Resend</a>
-              <div class="dropdown-divider"></div>
-              <a id="mnDelete" href="#" class="dropdown-item text-danger"><i class="ri-delete-bin-line"></i> Delete</a>
             </div>
           </div>
         </nav>
@@ -109,12 +108,6 @@
               <p id="rTo"></p>
             </div>
             <div class="mailcontent-time" id="rTime"></div>
-            <nav class="nav">
-              <a href="#" id="btnReplyTop" class="nav-link" role="button" title="Reply" aria-label="Reply"><i class="ri-reply-line" aria-hidden="true"></i></a>
-              <a href="#" id="btnFwdTop" class="nav-link" role="button" title="Forward" aria-label="Forward"><i class="ri-share-forward-line" aria-hidden="true"></i></a>
-              <a href="#" id="btnUnreadTop" class="nav-link" role="button" title="Mark as unread" aria-label="Mark as unread"><i class="ri-mail-unread-line" aria-hidden="true"></i></a>
-              <a href="#" id="btnDelTop" class="nav-link nav-danger" role="button" title="Delete" aria-label="Delete"><i class="ri-delete-bin-line" aria-hidden="true"></i></a>
-            </nav>
           </div>
           <div class="mailcontent-body">
             <div id="rBody"></div>
@@ -124,6 +117,7 @@
       </div>
       <div class="mailcontent-footer d-none">
         <a href="#" id="btnReply" class="btn btn-secondary btn-icontext"><i class="ri-reply-line me-1"></i> Reply</a>
+        <a href="#" id="btnForward" class="btn btn-ghost btn-icontext"><i class="ri-share-forward-line me-1"></i> Forward</a>
       </div>
       <div class="mailcontent-placeholder">
         <i class="ri-mail-send-line"></i>
