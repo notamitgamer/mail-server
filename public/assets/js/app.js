@@ -2,7 +2,7 @@
 const $ = window.jQuery;
 const FIREBASE_VER = '11.10.0';
 
-const state = { folder: 'inbox', mails: [], hasMore: false, loading: false, shown: 30, openId: null, openMail: null, unread: 0 };
+const state = { folder: 'inbox', mails: [], hasMore: false, loading: false, shown: 30, openId: null, openMail: null, unread: 0, filter: 'all' };
 let config = { aliases: [], fromName: '' };
 let getToken = async () => { throw new Error('Not signed in'); };
 let signOutFn = async () => {};
@@ -307,11 +307,12 @@ function setUnread(n) {
 
 function renderList() {
   const q = $('#search').val().trim().toLowerCase();
-  const items = state.mails.filter((m) => !q || `${m.subject} ${m.from} ${m.snippet}`.toLowerCase().includes(q));
+  const onlyUnread = state.filter === 'unread' && state.folder === 'inbox';
+  const items = state.mails.filter((m) => (!onlyUnread || !m.read) && (!q || `${m.subject} ${m.from} ${m.snippet}`.toLowerCase().includes(q)));
   const $ul = $('#mailGroup').empty().attr('aria-busy', String(Boolean(state.loading && !items.length)));
   if (!items.length && state.loading) $ul.append(skelRows(7));
   else if (!items.length) {
-    const [icon, title, hint] = q ? EMPTY.search : EMPTY[state.folder];
+    const [icon, title, hint] = q ? EMPTY.search : onlyUnread ? ['ri-mail-check-line', 'All caught up', 'No unread messages.'] : EMPTY[state.folder];
     $ul.append(`<li class="list-empty"><i class="${icon}" aria-hidden="true"></i><strong>${title}</strong><span>${hint}</span></li>`);
   }
   let lastDay = '';
@@ -501,6 +502,7 @@ function renderReader(m) {
   $('#rTime').text(fullDate(m.date));
   $('#btnReplyTop, #btnReply').toggleClass('d-none', sent);
   $('#mnReply, #mnUnread').toggleClass('d-none', sent);
+  $('#btnUnreadTop').toggleClass('d-none', sent);
   const rUrl = resendUrl(m, state.folder);
   $('#mnResend').toggleClass('d-none', !rUrl).attr('href', rUrl || '#');
   $('#rAttach').html((m.attachments || []).map((a) => `<span class="attach-chip"><i class="ri-attachment-2"></i> ${esc(a.filename)}${a.size ? ' (' + fmtSize(a.size) + ')' : ''}</span>`).join(''));
@@ -1018,6 +1020,7 @@ $('#folders').on('click', '.nav-link', function (e) {
   $(this).addClass('active').siblings().removeClass('active');
   state.folder = this.dataset.folder;
   $('#folderTitle').text(state.folder === 'sent' ? 'Sent' : 'Inbox');
+  setFilter('all');
   $('#search').val('');
   hideReader();
   closeLayer('side');
@@ -1048,3 +1051,26 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && Da
 setInterval(() => { if (!document.hidden) syncAll(); }, 120000);
 
 boot();
+
+// ---- unread filter, reader actions, keyboard shortcuts ----
+function setFilter(f) {
+  state.filter = f;
+  $('#mailTabs').toggleClass('d-none', state.folder !== 'inbox')
+    .find('button').each(function () { const on = this.dataset.filter === f; $(this).toggleClass('active', on).attr('aria-selected', String(on)); });
+  if (state.mails) renderList();
+}
+$('#mailTabs').on('click', 'button', function () { setFilter(this.dataset.filter); });
+$('#btnFwdTop').on('click', (e) => { e.preventDefault(); openForward(); });
+$('#btnUnreadTop').on('click', (e) => { e.preventDefault(); markUnread(); });
+$('#btnDelTop').on('click', (e) => { e.preventDefault(); deleteMail(); });
+
+$(document).on('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || $(e.target).is('input, textarea, select, [contenteditable]') || $('.modal.show').length) return;
+  const items = $('#mailGroup .mail-item');
+  const i = items.index(items.filter('.active'));
+  if (e.key === '/') { e.preventDefault(); $('#search').trigger('focus'); }
+  else if (e.key === 'j' && items.length) items.eq(Math.min(i + 1, items.length - 1)).trigger('click');
+  else if (e.key === 'k' && items.length) items.eq(Math.max(i - 1, 0)).trigger('click');
+  else if (e.key === 'r' && state.openMail && state.folder === 'inbox') { e.preventDefault(); startReply(); }
+  else if (e.key === 'c') { e.preventDefault(); openCompose(); }
+});

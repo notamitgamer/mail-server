@@ -73,6 +73,11 @@
         </div>
       </div>
 
+      <div id="mailTabs" class="mail-tabs" role="tablist" aria-label="Filter messages">
+        <button type="button" role="tab" class="active" aria-selected="true" data-filter="all">All</button>
+        <button type="button" role="tab" aria-selected="false" data-filter="unread">Unread</button>
+      </div>
+
       <div id="ptr" class="ptr" aria-hidden="true"><i class="ri-refresh-line"></i></div>
       <ul id="mailGroup" class="mail-group" aria-label="Messages" aria-busy="false"></ul>
     </div>
@@ -110,6 +115,9 @@
             <div class="mailcontent-time" id="rTime"></div>
             <nav class="nav">
               <a href="#" id="btnReplyTop" class="nav-link" role="button" title="Reply" aria-label="Reply"><i class="ri-reply-line" aria-hidden="true"></i></a>
+              <a href="#" id="btnFwdTop" class="nav-link" role="button" title="Forward" aria-label="Forward"><i class="ri-share-forward-line" aria-hidden="true"></i></a>
+              <a href="#" id="btnUnreadTop" class="nav-link" role="button" title="Mark as unread" aria-label="Mark as unread"><i class="ri-mail-unread-line" aria-hidden="true"></i></a>
+              <a href="#" id="btnDelTop" class="nav-link nav-danger" role="button" title="Delete" aria-label="Delete"><i class="ri-delete-bin-line" aria-hidden="true"></i></a>
             </nav>
           </div>
           <div class="mailcontent-body">

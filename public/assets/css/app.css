@@ -267,3 +267,26 @@ input[type="checkbox"] { accent-color: var(--peach); }
   *, *::before, *::after { transition-duration: .01ms !important; transition-delay: 0s !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
   .spin { opacity: .55; }
 }
+
+/* ---- shadcn-style polish: hairline borders, 8px radius, quiet focus ring ---- */
+:root { --radius: 8px; --ring: rgba(250, 179, 135, .45); }
+.mail-item { border-radius: var(--radius); border: 1px solid var(--surface0); }
+.mail-item:hover { background-color: var(--crust); }
+.mail-item.active { background-color: var(--surface0); border-color: var(--surface1); }
+.mail-item.unread .mail-subject { color: var(--text); }
+.mailcontent-body { border-radius: var(--radius); border: 1px solid var(--surface0); }
+.mailbox-search .form-control { border-radius: var(--radius); }
+.mailbox-search .form-control:focus { border-color: var(--peach); box-shadow: 0 0 0 3px var(--ring); }
+.btn { border-radius: var(--radius); }
+
+/* All / Unread segmented control */
+.mail-tabs { display: inline-flex; margin: 2px 10px 10px; padding: 3px; gap: 2px; background: var(--mantle); border: 1px solid var(--surface0); border-radius: var(--radius); }
+.mail-tabs button { border: 0; background: transparent; color: var(--overlay1); font-size: 13px; font-weight: 500; padding: 4px 14px; border-radius: 6px; cursor: pointer; }
+.mail-tabs button:hover { color: var(--text); }
+.mail-tabs button.active { background: var(--surface0); color: var(--text); }
+.mail-tabs button:focus-visible { outline: 2px solid var(--peach); outline-offset: 1px; }
+
+/* reader action row */
+.mailcontent-header > .nav { display: flex; gap: 2px; margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--surface0); }
+.mailcontent-header .nav-link { border-radius: 6px; }
+.mailcontent-header .nav-danger:hover, .mailcontent-header .nav-danger:focus { color: var(--red); }
