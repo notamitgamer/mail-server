@@ -757,6 +757,8 @@ app.get('/assets/js/app.js', (req, res, next) => {
   });
 });
 
+app.get("/privacy", (req, res) => res.sendFile(path.join(__dirname, "public", "privacy.html")));
+
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     if (/(\.html|\.webmanifest|sw\.js)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
