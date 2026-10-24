@@ -73,3 +73,4 @@ Issues and pull requests are welcome. Please report security problems privately,
 ## License
 
 [MIT](LICENSE) © Amit Dutta. The interface is based on the MIT-licensed [SmartMail](https://github.com/themepixels/smartmail) template by ThemePixels, and the app bundles other open-source libraries. Their licenses and credits are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
