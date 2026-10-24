@@ -57,25 +57,18 @@
     <div class="mailbox">
       <div class="mailbox-header">
         <a href="#" class="mailbox-menu" role="button" aria-label="Open menu"><i class="ri-menu-2-fill" aria-hidden="true"></i></a>
+        <div class="appbar-titles"><strong id="folderTitle" class="appbar-title">Inbox</strong><small id="countText" role="status"></small></div>
         <div class="mailbox-search">
           <i class="ri-search-line"></i>
           <input id="search" type="search" class="form-control" placeholder="Search loaded mail" aria-label="Search loaded mail">
         </div>
-        <a href="#" id="avatar" class="mail-avatar" role="button" title="Sign out" aria-label="Sign out"><span>m</span></a>
-      </div>
-
-      <div class="mailbox-option">
-        <strong id="folderTitle" class="ps-2">Inbox</strong>
-        <div class="ms-auto d-flex align-items-center">
-          <span id="countText" role="status"></span>
-          <a href="#" id="btnNotify" class="pager d-none" role="button" title="Turn on notifications" aria-label="Turn on notifications"><i class="ri-notification-off-line" aria-hidden="true"></i></a>
-          <a href="#" id="refresh" class="pager" role="button" title="Refresh" aria-label="Refresh mail"><i class="ri-refresh-line" aria-hidden="true"></i></a>
+        <div class="appbar-actions">
+          <a href="#" id="btnSearch" role="button" title="Search" aria-label="Search"><i class="ri-search-line" aria-hidden="true"></i></a>
+          <a href="#" id="btnFilter" role="button" title="Show unread only" aria-label="Show unread only" aria-pressed="false"><i class="ri-filter-3-line" aria-hidden="true"></i></a>
+          <a href="#" id="btnNotify" class="d-none" role="button" title="Turn on notifications" aria-label="Turn on notifications"><i class="ri-notification-off-line" aria-hidden="true"></i></a>
+          <a href="#" id="refresh" role="button" title="Refresh" aria-label="Refresh mail"><i class="ri-refresh-line" aria-hidden="true"></i></a>
+          <a href="#" id="avatar" class="mail-avatar" role="button" title="Sign out" aria-label="Sign out"><span>m</span></a>
         </div>
-      </div>
-
-      <div id="mailTabs" class="mail-tabs" role="tablist" aria-label="Filter messages">
-        <button type="button" role="tab" class="active" aria-selected="true" data-filter="all">All</button>
-        <button type="button" role="tab" aria-selected="false" data-filter="unread">Unread</button>
       </div>
 
       <div id="ptr" class="ptr" aria-hidden="true"><i class="ri-refresh-line"></i></div>

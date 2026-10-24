@@ -1020,7 +1020,7 @@ $('#folders').on('click', '.nav-link', function (e) {
   $(this).addClass('active').siblings().removeClass('active');
   state.folder = this.dataset.folder;
   $('#folderTitle').text(state.folder === 'sent' ? 'Sent' : 'Inbox');
-  setFilter('all');
+  setFilter('all'); $('.mailbox-header').removeClass('searching');
   $('#search').val('');
   hideReader();
   closeLayer('side');
@@ -1055,11 +1055,15 @@ boot();
 // ---- unread filter, reader actions, keyboard shortcuts ----
 function setFilter(f) {
   state.filter = f;
-  $('#mailTabs').toggleClass('d-none', state.folder !== 'inbox')
-    .find('button').each(function () { const on = this.dataset.filter === f; $(this).toggleClass('active', on).attr('aria-selected', String(on)); });
+  $('#btnFilter').toggleClass('d-none', state.folder !== 'inbox').toggleClass('on', f === 'unread')
+    .attr({ 'aria-pressed': String(f === 'unread'), title: f === 'unread' ? 'Showing unread only' : 'Show unread only' });
   if (state.mails) renderList();
 }
-$('#mailTabs').on('click', 'button', function () { setFilter(this.dataset.filter); });
+$('#btnFilter').on('click', (e) => { e.preventDefault(); setFilter(state.filter === 'unread' ? 'all' : 'unread'); });
+const openSearch = () => { $('.mailbox-header').addClass('searching'); $('#search').trigger('focus'); };
+$('#btnSearch').on('click', (e) => { e.preventDefault(); openSearch(); });
+$('#search').on('blur', () => { if (!$('#search').val()) $('.mailbox-header').removeClass('searching'); })
+  .on('keydown', (e) => { if (e.key === 'Escape') { $('#search').val('').trigger('input').trigger('blur'); } });
 $('#btnFwdTop').on('click', (e) => { e.preventDefault(); openForward(); });
 $('#btnUnreadTop').on('click', (e) => { e.preventDefault(); markUnread(); });
 $('#btnDelTop').on('click', (e) => { e.preventDefault(); deleteMail(); });
@@ -1068,7 +1072,7 @@ $(document).on('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || $(e.target).is('input, textarea, select, [contenteditable]') || $('.modal.show').length) return;
   const items = $('#mailGroup .mail-item');
   const i = items.index(items.filter('.active'));
-  if (e.key === '/') { e.preventDefault(); $('#search').trigger('focus'); }
+  if (e.key === '/') { e.preventDefault(); openSearch(); }
   else if (e.key === 'j' && items.length) items.eq(Math.min(i + 1, items.length - 1)).trigger('click');
   else if (e.key === 'k' && items.length) items.eq(Math.max(i - 1, 0)).trigger('click');
   else if (e.key === 'r' && state.openMail && state.folder === 'inbox') { e.preventDefault(); startReply(); }

@@ -335,3 +335,23 @@ input[type="checkbox"] { accent-color: var(--peach); }
 .mail-row, .mail-row .mail-item { margin: 0; }
 .mail-item { padding-top: 12px; padding-bottom: 12px; }
 .mail-day { padding: 14px 20px 6px; }
+
+/* ---- app bar (K-9 style): menu, big title, icon actions; search opens in place of the title ---- */
+.mailbox-header { display: flex; align-items: center; gap: 4px; height: auto; min-height: 64px; background: var(--mantle);
+  padding: calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) 8px calc(8px + env(safe-area-inset-left)); }
+.mailbox-header .mailbox-menu { position: static; flex: none; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
+.mailbox-header .mailbox-menu:hover { background: var(--surface0); }
+.appbar-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding-left: 8px; }
+.appbar-title { font-size: 22px; font-weight: 400; color: var(--text); line-height: 1.2; }
+.appbar-titles small { font-size: 12px; color: var(--overlay1); line-height: 1.2; }
+.appbar-titles small:empty { display: none; }
+.mailbox-header .mailbox-search { display: none; position: static; flex: 1; margin: 0; height: 44px; }
+.mailbox-header.searching .mailbox-search { display: flex; align-items: center; }
+.mailbox-header.searching .appbar-titles { display: none; }
+.appbar-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.appbar-actions > a:not(.mail-avatar) { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--subtext1); font-size: 21px; text-decoration: none; }
+.appbar-actions > a:not(.mail-avatar):hover, .appbar-actions > a:not(.mail-avatar):focus-visible { background: var(--surface0); color: var(--text); }
+.appbar-actions > a.on { background: var(--surface1); color: var(--peach); }
+.appbar-actions > a.d-none { display: none; }
+.mailbox-header.searching #btnSearch { display: none; }
+.mailbox-header .mail-avatar { position: static; margin: 0 4px 0 6px; flex: none; }
