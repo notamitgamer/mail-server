@@ -675,7 +675,6 @@ async function offerTemplate() {
 
 // ---- drafts: saved a couple of seconds after you stop typing ----
 const composeData = () => {
-  commitAllPills();
   const $c = $('.compose'); const tpl = $c.data('tpl');
   return {
     id: $c.data('draftId') || undefined, from: $('#cFrom').val() || '',
@@ -1294,12 +1293,12 @@ $(document).on('click', '.pill-text', function (e) { // tap a pill to edit it
   $p.remove(); $box.find('.pill-input').val(addr).trigger('focus');
 });
 $(document).on('keydown', '.pill-input', function (e) {
-  if (['Enter', ',', ';', ' '].includes(e.key) && this.value.trim()) { e.preventDefault(); commitPill($(this)); }
-  else if (e.key === 'Tab' && this.value.trim()) commitPill($(this));
+  if ([' ', ','].includes(e.key) && this.value.trim()) { e.preventDefault(); commitPill($(this)); }
+  // Tab commit disabled
   else if (e.key === 'Backspace' && !this.value) { $(this).closest('.pill-box').find('.pill').last().remove(); queueDraft(); }
 });
-$(document).on('input', '.pill-input', function () { if (/[,;\s]$/.test(this.value)) commitPill($(this)); }); // phone keyboards
-$(document).on('focusout', '.pill-input', function () { commitPill($(this)); });
+$(document).on('input', '.pill-input', function () { if (/[, ]$/.test(this.value)) commitPill($(this)); }); // phone keyboards
+// focusout commit disabled
 $(document).on('paste', '.pill-input', function (e) {
   const t = (e.originalEvent.clipboardData || window.clipboardData).getData('text');
   if (!t) return;
