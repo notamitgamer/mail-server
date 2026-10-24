@@ -280,7 +280,11 @@ const FROM_NAME = (process.env.FROM_NAME || '').replace(/[<>"\\\r\n]/g, '').trim
 const FOLDERS = {
   inbox: { collection: 'mails', dateField: 'receivedAt' },
   sent: { collection: 'sent', dateField: 'sentAt' },
+  drafts: { collection: 'drafts', dateField: 'updatedAt' },
+  trash: { collection: 'trash', dateField: 'deletedAt' }, // deleted inbox/sent mail, kept TRASH_DAYS days
 };
+const TRASH_DAYS = 30;
+const MAX_RECIPIENTS = 50; // to + cc + bcc
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
@@ -311,6 +315,9 @@ const toSummary = (id, d, folder) => ({
   id,
   from: d.from || '',
   to: [].concat(d.to || []),
+  cc: [].concat(d.cc || []),
+  bcc: [].concat(d.bcc || []),
+  origin: d.origin || null, // trash only: the folder the mail was deleted from
   subject: d.subject || '(no subject)',
   snippet: d.snippet || '',
   date: (d[FOLDERS[folder].dateField]?.toDate?.() || new Date()).toISOString(),
@@ -325,6 +332,10 @@ const toFull = (id, d, folder) => ({
   text: d.text || null,
   attachments: d.attachments || [],
   truncated: Boolean(d.truncated),
+  templateHtml: d.templateHtml || null, // drafts only
+  templateName: d.templateName || null,
+  htmlMode: Boolean(d.htmlMode),
+  replyToId: d.replyToId || null,
 });
 
 // Public, non-secret settings the web app needs to start.
@@ -334,15 +345,28 @@ app.get('/api/config', (req, res) => {
   res.json({ firebase, aliases: SEND_ALIASES, fromName: FROM_NAME, vapidPublicKey: pushEnabled ? process.env.VAPID_PUBLIC_KEY.trim() : null });
 });
 
+// Removes bin mail older than TRASH_DAYS (checked whenever the bin is read, and every few hours).
+async function purgeTrash() {
+  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - TRASH_DAYS * 86400000);
+  const snap = await db.collection('trash').where('deletedAt', '<', cutoff).select().limit(400).get();
+  if (snap.empty) return 0;
+  const batch = db.batch();
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+  return snap.size;
+}
+if (db) setInterval(() => purgeTrash().catch((e) => console.error('purgeTrash', e)), 6 * 3600000).unref();
+
 app.get('/api/mails', requireOwner, handle(async (req, res) => {
   const folder = folderOf(req);
+  if (folder === 'trash') await purgeTrash().catch(() => {});
   const { collection, dateField } = FOLDERS[folder];
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 100);
   let query = db.collection(collection).orderBy(dateField, 'desc');
   const before = Number(req.query.before);
   if (before) query = query.startAfter(admin.firestore.Timestamp.fromMillis(before));
   const snap = await query
-    .select('from', 'to', 'subject', 'snippet', 'read', 'attachments', dateField)
+    .select('from', 'to', 'cc', 'bcc', 'origin', 'subject', 'snippet', 'read', 'attachments', dateField)
     .limit(limit + 1)
     .get();
 
@@ -372,6 +396,7 @@ app.get('/api/mails/:id', requireOwner, handle(async (req, res) => {
 //   &reconcile=1  also return the unread count and ids, so read state from other devices catches up
 app.get('/api/sync', requireOwner, handle(async (req, res) => {
   const folder = folderOf(req);
+  if (folder === 'trash') await purgeTrash().catch(() => {});
   const { collection, dateField } = FOLDERS[folder];
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 50);
   const since = Number(req.query.since);
@@ -428,10 +453,118 @@ app.post('/api/mails/:id/unread', requireOwner, handle(async (req, res) => {
   return res.json({ ok: true });
 }));
 
-// Permanently deletes one message (inbox or sent) from Firestore.
+// Inbox/sent mail moves to the bin (restorable for TRASH_DAYS days). Deleting from the bin or from drafts is permanent.
 app.delete('/api/mails/:id', requireOwner, handle(async (req, res) => {
   if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
-  await db.collection(FOLDERS[folderOf(req)].collection).doc(req.params.id).delete(); // deleting a missing doc is fine
+  const folder = folderOf(req);
+  const ref = db.collection(FOLDERS[folder].collection).doc(req.params.id);
+  if (folder === 'inbox' || folder === 'sent') {
+    const snap = await ref.get();
+    if (snap.exists) {
+      const batch = db.batch();
+      batch.set(db.collection('trash').doc(snap.id), { ...snap.data(), origin: folder, deletedAt: admin.firestore.Timestamp.now() });
+      batch.delete(ref);
+      await batch.commit();
+    }
+    return res.json({ ok: true, trashed: true });
+  }
+  await ref.delete(); // deleting a missing doc is fine
+  return res.json({ ok: true });
+}));
+
+app.post('/api/mails/:id/restore', requireOwner, handle(async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  const ref = db.collection('trash').doc(req.params.id);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: 'Not found' });
+  const { origin, deletedAt, ...rest } = snap.data(); // eslint-disable-line no-unused-vars
+  const folder = origin === 'sent' ? 'sent' : 'inbox';
+  const batch = db.batch();
+  batch.set(db.collection(FOLDERS[folder].collection).doc(snap.id), rest);
+  batch.delete(ref);
+  await batch.commit();
+  return res.json({ ok: true, folder, mail: toFull(snap.id, rest, folder) });
+}));
+
+app.delete('/api/trash', requireOwner, handle(async (req, res) => {
+  let deleted = 0;
+  for (;;) {
+    const snap = await db.collection('trash').select().limit(400).get();
+    if (snap.empty) break;
+    const batch = db.batch();
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    deleted += snap.size;
+  }
+  return res.json({ ok: true, deleted });
+}));
+
+const addrList = (v) => (Array.isArray(v) ? v : String(v || '').split(/[,;\s]+/)).map((a) => String(a).trim()).filter(Boolean);
+
+// ---- drafts: saved as you type, one document per draft ----
+app.post('/api/drafts', requireOwner, express.json({ limit: '1mb' }), handle(async (req, res) => {
+  const b = req.body || {};
+  const text = String(b.text || '');
+  const templateHtml = String(b.templateHtml || '');
+  if (text.length > 500000 || templateHtml.length > 200000) return res.status(413).json({ error: 'Draft too large' });
+  const list = (v) => addrList(v).slice(0, MAX_RECIPIENTS).map((a) => a.slice(0, 320));
+  const doc = {
+    from: String(b.from || '').slice(0, 320),
+    to: list(b.to), cc: list(b.cc), bcc: list(b.bcc),
+    subject: String(b.subject || '').replace(/[\r\n]+/g, ' ').slice(0, 500),
+    text, html: null, templateHtml, templateName: String(b.templateName || '').slice(0, 80), htmlMode: Boolean(b.htmlMode),
+    replyToId: b.replyToId && ID_RE.test(b.replyToId) ? b.replyToId : null,
+    snippet: makeSnippet({ text: text || htmlToText(templateHtml) }),
+    attachments: [], read: true,
+    updatedAt: admin.firestore.Timestamp.now(),
+  };
+  if (b.id !== undefined && b.id !== null && b.id !== '') {
+    if (!ID_RE.test(String(b.id))) return res.status(400).json({ error: 'Bad id' });
+    const ref = db.collection('drafts').doc(String(b.id));
+    if (!(await ref.get()).exists) return res.status(404).json({ error: 'Draft not found' }); // sent or discarded meanwhile
+    await ref.set(doc);
+    return res.json({ ok: true, id: ref.id });
+  }
+  const ref = await db.collection('drafts').add(doc);
+  return res.json({ ok: true, id: ref.id });
+}));
+
+// ---- templates: reusable HTML blocks (signature, footer...) the composer offers to add ----
+app.get('/api/templates', requireOwner, handle(async (req, res) => {
+  const snap = await db.collection('templates').limit(50).get();
+  const templates = snap.docs.map((d) => ({ id: d.id, name: d.data().name || '', html: d.data().html || '', isDefault: Boolean(d.data().isDefault) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  res.set('Cache-Control', 'no-store').json({ templates });
+}));
+
+app.post('/api/templates', requireOwner, express.json({ limit: '400kb' }), handle(async (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0, 80);
+  const html = String(b.html || '');
+  if (!name || !html.trim()) return res.status(400).json({ error: 'A template needs a name and some HTML' });
+  if (html.length > 200000) return res.status(413).json({ error: 'Template too large' });
+  const col = db.collection('templates');
+  let ref;
+  if (b.id) {
+    if (!ID_RE.test(String(b.id))) return res.status(400).json({ error: 'Bad id' });
+    ref = col.doc(String(b.id));
+    if (!(await ref.get()).exists) return res.status(404).json({ error: 'Not found' });
+  } else {
+    if ((await col.count().get()).data().count >= 20) return res.status(400).json({ error: 'At most 20 templates' });
+    ref = col.doc();
+  }
+  const batch = db.batch();
+  if (b.isDefault) { // only one default
+    (await col.where('isDefault', '==', true).get()).docs.forEach((d) => { if (d.id !== ref.id) batch.update(d.ref, { isDefault: false }); });
+  }
+  batch.set(ref, { name, html, isDefault: Boolean(b.isDefault), updatedAt: admin.firestore.Timestamp.now() });
+  await batch.commit();
+  return res.json({ ok: true, id: ref.id });
+}));
+
+app.delete('/api/templates/:id', requireOwner, handle(async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  await db.collection('templates').doc(req.params.id).delete();
   return res.json({ ok: true });
 }));
 
@@ -441,10 +574,10 @@ app.post('/api/send', requireOwner, express.json({ limit: '2mb' }), handle(async
   while (sendLog.length && now - sendLog[0] > 3600000) sendLog.shift();
   if (sendLog.length >= 50) return res.status(429).json({ error: 'Hourly send limit reached' });
 
-  const { to, subject, html, text, replyToId, from } = req.body || {};
-  const recipients = (Array.isArray(to) ? to : String(to || '').split(/[,;\s]+/))
-    .map((a) => String(a).trim()).filter(Boolean);
-  if (!recipients.length || recipients.length > 20 || !recipients.every((a) => EMAIL_RE.test(a))) {
+  const { to, cc, bcc, subject, html, text, replyToId, from, draftId } = req.body || {};
+  const recipients = addrList(to); const ccList = addrList(cc); const bccList = addrList(bcc);
+  const everyone = [...recipients, ...ccList, ...bccList];
+  if (!recipients.length || everyone.length > MAX_RECIPIENTS || !everyone.every((a) => EMAIL_RE.test(a))) {
     return res.status(400).json({ error: 'Enter valid recipient address(es)' });
   }
   if (!html && !text) return res.status(400).json({ error: 'Message is empty' });
@@ -458,6 +591,8 @@ app.post('/api/send', requireOwner, express.json({ limit: '2mb' }), handle(async
   const payload = {
     from: FROM_NAME ? `"${FROM_NAME}" <${fromAddress}>` : fromAddress,
     to: recipients,
+    ...(ccList.length ? { cc: ccList } : {}),
+    ...(bccList.length ? { bcc: bccList } : {}),
     subject: String(subject || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 500) || '(no subject)',
   };
   if (html) { payload.html = String(html); payload.text = text ? String(text) : htmlToText(html); } else { payload.text = String(text); }
@@ -483,7 +618,7 @@ app.post('/api/send', requireOwner, express.json({ limit: '2mb' }), handle(async
   sendLog.push(now);
   const ref = await db.collection('sent').add({
     from: fromAddress,
-    to: recipients,
+    to: recipients, cc: ccList, bcc: bccList,
     subject: payload.subject,
     html: payload.html || null,
     text: payload.text || null,
@@ -493,6 +628,7 @@ app.post('/api/send', requireOwner, express.json({ limit: '2mb' }), handle(async
     inReplyTo,
     attachments: [],
   });
+  if (draftId && ID_RE.test(String(draftId))) await db.collection('drafts').doc(String(draftId)).delete().catch(() => {}); // the draft became this mail
   return res.json({ ok: true, id: ref.id });
 }));
 

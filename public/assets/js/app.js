@@ -68,9 +68,12 @@ const dayLabel = (iso) => {
   const diff = Math.round((t - d) / 864e5);
   return diff <= 0 ? 'Today' : diff === 1 ? 'Yesterday' : 'Earlier';
 };
+const TITLES = { inbox: 'Inbox', sent: 'Sent', drafts: 'Drafts', trash: 'Bin' };
 const EMPTY = {
   inbox: ['ri-mail-check-line', 'Inbox zero', 'Nothing new. Enjoy the quiet.'],
   sent: ['ri-send-plane-2-line', 'Nothing sent yet', 'Messages you send will show up here.'],
+  drafts: ['ri-draft-line', 'No drafts', 'Messages you start writing are saved here automatically.'],
+  trash: ['ri-delete-bin-line', 'Bin is empty', 'Deleted mail stays here for 30 days.'],
   search: ['ri-search-line', 'No matches', 'Try a different word.'],
 };
 const skelRows = (n) => Array.from({ length: n }, () => '<li class="mail-row skel-row" aria-hidden="true"><div class="mail-item"><span class="skel skel-avatar"></span>'
@@ -173,7 +176,7 @@ const store = {
 };
 
 // Per-folder sync cursor ({ newest, oldest, hasOlder } as ms timestamps) and app-level bits.
-const fresh = () => ({ inbox: {}, sent: {}, app: { unread: 0, pendingRead: [], lastSync: 0 } });
+const fresh = () => ({ inbox: {}, sent: {}, drafts: {}, trash: {}, app: { unread: 0, pendingRead: [], lastSync: 0 } });
 let meta = fresh();
 const saveMeta = (k) => store.setMeta(k, meta[k]);
 async function loadMeta() {
@@ -317,17 +320,20 @@ function renderList() {
   }
   let lastDay = '';
   items.forEach((m) => {
-    const sent = state.folder === 'sent';
+    const sent = state.folder === 'sent' || state.folder === 'drafts' || (state.folder === 'trash' && m.origin === 'sent');
+    const drafts = state.folder === 'drafts';
+    const who = drafts ? (m.to[0] ? 'To: ' + m.to[0] : 'No recipient') : sent ? 'To: ' + (m.to[0] || '') : label(m.from);
     const day = dayLabel(m.date);
     if (day !== lastDay) { lastDay = day; $ul.append(`<li class="mail-day" role="presentation">${day}</li>`); }
     $ul.append(`<li class="mail-row" data-dir=""><div class="swipe-bg" aria-hidden="true">`
-      + (sent ? '' : `<span class="swipe-read"><i class="${m.read ? 'ri-mail-unread-line' : 'ri-mail-open-line'}"></i>${m.read ? 'Unread' : 'Read'}</span>`)
+      + (state.folder === 'inbox' ? `<span class="swipe-read"><i class="${m.read ? 'ri-mail-unread-line' : 'ri-mail-open-line'}"></i>${m.read ? 'Unread' : 'Read'}</span>`
+        : state.folder === 'trash' ? '<span class="swipe-read"><i class="ri-arrow-go-back-line"></i>Restore</span>' : '')
       + '<span class="swipe-del">Delete<i class="ri-delete-bin-line"></i></span></div>'
       + `<div class="mail-item${m.read ? '' : ' unread'}${m.id === state.openId ? ' active' : ''}" data-id="${esc(m.id)}" role="button" tabindex="0">`
-      + avatar(sent ? m.to[0] : m.from)
+      + avatar(sent ? (m.to[0] || 'Draft') : m.from)
       + `<div class="mail-item-body"><div class="d-flex align-items-center"><h6 class="mail-subject">${m.read ? '' : '<span class="visually-hidden">Unread. </span>'}${esc(m.subject)}</h6>`
       + `${(m.attachments || []).length ? '<i class="ri-attachment-2 mail-clip" aria-label="Has attachment"></i>' : ''}<span class="mail-time">${esc(fmtDate(m.date))}</span></div>`
-      + `<p class="mail-text"><span class="mail-sender">${esc(sent ? 'To: ' + (m.to[0] || '') : label(m.from))}</span> \u2013 ${esc(previewOf(m))}</p></div></div></li>`);
+      + `<p class="mail-text"><span class="mail-sender${drafts ? ' mail-draft' : ''}">${esc(who)}</span> \u2013 ${esc(previewOf(m))}</p></div></div></li>`);
   });
   if (state.hasMore && !q) $ul.append('<li class="load-more"><button id="loadMore" class="btn btn-sm btn-outline-primary">Load more</button></li>');
   renderStatus();
@@ -336,9 +342,11 @@ function renderList() {
 
 function renderStatus() {
   const n = state.mails.length; const total = meta[state.folder].total;
-  $('#countText').text((navigator.onLine ? '' : 'Offline · ') + (n ? (total ? `${n} of ${total}` : `${n} saved`) : ''));
+  $('#countText').text((navigator.onLine ? '' : 'Offline · ') + (n ? (total ? `${n} of ${total}` : `${n} saved`) + (state.folder === 'trash' ? ' · removed after 30 days' : '') : ''));
   $('#totalInbox').text(meta.inbox.total || '');
   $('#totalSent').text(meta.sent.total || '');
+  $('#totalDrafts').text(meta.drafts.total || '');
+  $('#totalTrash').text(meta.trash.total || '');
 }
 
 // Draw the list from what is saved on this device. Never waits on the network.
@@ -411,7 +419,7 @@ async function syncAll({ reconcile = false, manual = false } = {}) {
   try {
     await appReady;
     await flushReads();
-    const folders = reconcile ? ['inbox', 'sent'] : ['inbox'].concat(state.folder === 'sent' ? ['sent'] : []);
+    const folders = reconcile ? ['inbox', 'sent', 'drafts', 'trash'] : ['inbox'].concat(state.folder !== 'inbox' ? [state.folder] : []);
     for (const f of folders) await syncFolder(f, reconcile);
     meta.app.lastSync = Date.now(); await saveMeta('app');
   } catch (e) { if (manual || navigator.onLine) toast(e.status ? e.message : 'Could not sync. Showing saved mail.'); }
@@ -492,25 +500,29 @@ function renderBody(m) {
 }
 
 function renderReader(m) {
-  const sent = state.folder === 'sent';
+  const trash = state.folder === 'trash'; const inbox = state.folder === 'inbox';
+  const sent = state.folder === 'sent' || (trash && m.origin === 'sent');
   const p = parseAddr(m.from);
   $('#rSubject').text(m.subject);
   const who = sent ? m.to[0] : m.from;
   $('#rAvatar').attr('class', colorOf(who)).text(label(who).charAt(0).toLowerCase());
   $('#rFrom').html(sent ? `Me <span>&lt;${esc(m.from)}&gt;</span>` : `${esc(p.name || p.addr)}${p.name ? ` <span>&lt;${esc(p.addr)}&gt;</span>` : ''}`);
-  $('#rTo').text('to: ' + m.to.join(', '));
+  $('#rTo').text('to: ' + m.to.join(', ') + ((m.cc || []).length ? ' · cc: ' + m.cc.join(', ') : '') + ((m.bcc || []).length ? ' · bcc: ' + m.bcc.join(', ') : ''));
   $('#rTime').text(fullDate(m.date));
-  $('#btnReplyTop, #btnReply').toggleClass('d-none', sent);
-  $('#mnReply, #mnUnread').toggleClass('d-none', sent);
-  $('#btnUnreadTop').toggleClass('d-none', sent);
-  const rUrl = resendUrl(m, state.folder);
+  $('#btnReplyTop, #btnReply').toggleClass('d-none', !inbox);
+  $('#mnReply, #mnUnread, #btnUnreadTop').toggleClass('d-none', !inbox);
+  $('#btnFwdTop, #btnForward, #mnForward').toggleClass('d-none', trash);
+  $('#btnRestoreTop, #mnRestore').toggleClass('d-none', !trash);
+  $('#btnDelTop').attr({ title: trash ? 'Delete forever' : 'Move to Bin', 'aria-label': trash ? 'Delete forever' : 'Move to Bin' });
+  const rUrl = resendUrl(m, sent ? 'sent' : state.folder);
   $('#mnResend').toggleClass('d-none', !rUrl).attr('href', rUrl || '#');
   $('#rAttach').html((m.attachments || []).map((a) => `<span class="attach-chip"><i class="ri-attachment-2"></i> ${esc(a.filename)}${a.size ? ' (' + fmtSize(a.size) + ')' : ''}</span>`).join(''));
   renderBody(m);
   mc.update();
 }
 
-async function openMail(id, { ready } = {}) { // ready: optional async step that makes the mail available (it is shown as loading until then)
+async function openMail(id, { ready } = {}) {
+  if (state.folder === 'drafts') return editDraft(id); // ready: optional async step that makes the mail available (it is shown as loading until then)
   const folder = state.folder;
   state.openId = id;
   $('#mailGroup .mail-item').removeClass('active').filter((i, el) => el.dataset.id === id).addClass('active');
@@ -612,18 +624,119 @@ function printMail() {
 }
 
 // ---------- compose / reply ----------
-function openCompose({ to = '', subject = '', body = '', replyToId = null, title = 'New Message' } = {}) {
+const MAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+const TPL_FORBID = ['style', 'meta', 'base', 'link', 'form', 'iframe', 'object', 'embed', 'script'];
+const cleanTpl = (html) => window.DOMPurify.sanitize(html || '', { FORBID_TAGS: TPL_FORBID });
+const asList = (v) => [].concat(v || []).filter(Boolean);
+let composeDirty = false; let draftTimer = null; let draftBusy = null; let templates = null;
+
+// Recipient fields: every address becomes a pill (red when it is not a valid address). Click a pill's text to edit it.
+const pillsOf = ($box) => $box.find('.pill').map((i, el) => el.dataset.addr).get();
+function initPillBox($box) {
+  const label = esc($box.data('label'));
+  $box.html(`<span class="pill-label">${label}</span><span class="pill-list"></span><input class="pill-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="${label}">`);
+}
+function addPills($box, text) {
+  const found = String(text).match(/[^\s,;<>"']+@[^\s,;<>"']+/g); // also pulls the address out of "Name <a@b.c>"
+  const items = found || (String(text).trim() ? [String(text).trim()] : []);
+  const have = new Set(pillsOf($box).map((a) => a.toLowerCase()));
+  items.forEach((a) => {
+    if (have.has(a.toLowerCase())) return;
+    have.add(a.toLowerCase());
+    $box.find('.pill-list').append(`<span class="pill${MAIL_RE.test(a) ? '' : ' bad'}" data-addr="${esc(a)}"><span class="pill-text">${esc(a)}</span>`
+      + `<button type="button" class="pill-x" tabindex="-1" aria-label="Remove ${esc(a)}"><i class="ri-close-line" aria-hidden="true"></i></button></span>`);
+  });
+  if (items.length) queueDraft();
+}
+const setPills = ($box, list) => { $box.find('.pill').remove(); $box.find('.pill-input').val(''); asList(list).forEach((a) => addPills($box, a)); };
+const commitPill = ($input) => { const v = $input.val(); if (v.trim()) { $input.val(''); addPills($input.closest('.pill-box'), v); } };
+const commitAllPills = () => $('.compose .pill-input').each(function () { commitPill($(this)); });
+const showCc = (on) => { $('#cCcRow, #cBccRow').toggleClass('d-none', !on); $('#cCcToggle').toggleClass('d-none', on); };
+
+// ---- templates (HTML blocks kept on the server, offered when a message is started) ----
+async function loadTemplates(force) {
+  if (templates && !force) return templates;
+  if (!navigator.onLine) return templates || [];
+  try { templates = (await api('/api/templates')).templates; } catch (e) { templates = templates || []; }
+  return templates;
+}
+function attachTemplate(t) { // t: { name, html } or null
+  $('.compose').data('tpl', t || null);
+  $('#cTplOn').toggleClass('d-none', !t); $('#cTpl').addClass('d-none');
+  if (t) { $('#cTplName').text(t.name || 'Template'); $('#cTplPreview').html(cleanTpl(t.html)); }
+}
+async function offerTemplate() {
+  const list = await loadTemplates();
+  const $c = $('.compose');
+  if (!list.length || $c.hasClass('d-none') || $c.data('tpl') || $c.data('tplSkipped')) return;
+  $('#cTplSel').html(list.map((t) => `<option value="${esc(t.id)}"${t.isDefault ? ' selected' : ''}>${esc(t.name)}</option>`).join(''));
+  $('#cTpl').removeClass('d-none');
+}
+
+// ---- drafts: saved a couple of seconds after you stop typing ----
+const composeData = () => {
+  commitAllPills();
+  const $c = $('.compose'); const tpl = $c.data('tpl');
+  return {
+    id: $c.data('draftId') || undefined, from: $('#cFrom').val() || '',
+    to: pillsOf($('#cTo')), cc: pillsOf($('#cCc')), bcc: pillsOf($('#cBcc')),
+    subject: $('#cSubject').val(), text: $('#cBody').val(), htmlMode: $('#cHtml').is(':checked'),
+    replyToId: $c.data('replyToId') || undefined, templateHtml: tpl ? tpl.html : '', templateName: tpl ? tpl.name : '',
+  };
+};
+const composeEmpty = (d) => !d.to.length && !d.cc.length && !d.bcc.length && !d.subject.trim() && !d.text.trim() && !d.templateHtml;
+function queueDraft() { composeDirty = true; clearTimeout(draftTimer); draftTimer = setTimeout(() => saveDraft(), 2000); }
+async function saveDraft() {
+  clearTimeout(draftTimer);
+  if (!composeDirty || $('.compose').hasClass('d-none') || !navigator.onLine) return false;
+  const d = composeData();
+  if (composeEmpty(d)) return false;
+  if (draftBusy) await draftBusy.catch(() => {}); // one save at a time, so a new draft's id is known before the next one
+  composeDirty = false;
+  const $c = $('.compose'); d.id = $c.data('draftId') || undefined;
+  draftBusy = api('/api/drafts', { method: 'POST', body: JSON.stringify(d) });
+  try {
+    const r = await draftBusy;
+    $c.data('draftId', r.id); $('#cDraftState').text('Draft saved');
+    syncFolder('drafts', false).then(() => (state.folder === 'drafts' ? showFolder() : renderStatus())).catch(() => {});
+    return true;
+  } catch (e) {
+    if (e.status === 404) $c.data('draftId', null); // discarded or sent elsewhere: the next save starts a new draft
+    composeDirty = true; $('#cDraftState').text('Not saved');
+    return false;
+  } finally { draftBusy = null; }
+}
+
+function openCompose({ to = [], cc = [], bcc = [], from = '', subject = '', body = '', replyToId = null, draftId = null, template = null, htmlMode = false, title = 'New Message' } = {}) {
+  clearTimeout(draftTimer);
   $('#composeTitle').text(title);
   $('#cFrom').html((config.aliases || []).map((a) => `<option>${esc(a)}</option>`).join('')).closest('.form-group').toggle((config.aliases || []).length > 1);
-  $('#cTo').val(to); $('#cSubject').val(subject); $('#cBody').val(body); $('#cHtml').prop('checked', false);
-  $('.compose').data('replyToId', replyToId).removeClass('d-none minimize');
+  if (from) $('#cFrom').val(from);
+  setPills($('#cTo'), to); setPills($('#cCc'), cc); setPills($('#cBcc'), bcc);
+  showCc(asList(cc).length > 0 || asList(bcc).length > 0);
+  $('#cSubject').val(subject); $('#cBody').val(body); $('#cHtml').prop('checked', htmlMode); $('#cDraftState').text('');
+  $('.compose').data({ replyToId, draftId, tplSkipped: false }).removeClass('d-none minimize');
+  attachTemplate(template);
   $('.menu-compose').addClass('d-none');
-  if (to) { const el = $('#cBody').trigger('focus')[0]; el.setSelectionRange(0, 0); el.scrollTop = 0; } else $('#cTo').trigger('focus');
+  if (!template) offerTemplate();
+  if (asList(to).length) { const el = $('#cBody').trigger('focus')[0]; el.setSelectionRange(0, 0); el.scrollTop = 0; } else $('#cTo .pill-input').trigger('focus');
+  clearTimeout(draftTimer); composeDirty = false;
 }
 
 function closeCompose() {
+  clearTimeout(draftTimer); composeDirty = false;
   $('.compose').addClass('d-none').removeClass('minimize fullscreen');
   $('.menu-compose').removeClass('d-none');
+}
+
+async function editDraft(id) {
+  const m = await store.get('drafts', id);
+  if (!m) return toast('Draft not found.');
+  openCompose({
+    to: m.to, cc: m.cc, bcc: m.bcc, from: m.from, subject: m.subject === '(no subject)' ? '' : m.subject, body: m.text || '',
+    replyToId: m.replyToId, draftId: m.id, htmlMode: m.htmlMode, title: 'Draft',
+    template: m.templateHtml ? { name: m.templateName || 'Template', html: m.templateHtml } : null,
+  });
 }
 
 function startReply() {
@@ -642,14 +755,26 @@ function startReply() {
 
 async function sendMail() {
   if (!navigator.onLine) return toast('You are offline. Connect to send.');
-  const payload = { to: $('#cTo').val(), subject: $('#cSubject').val(), from: $('#cFrom').val() || undefined, replyToId: $('.compose').data('replyToId') || undefined };
-  payload[$('#cHtml').is(':checked') ? 'html' : 'text'] = $('#cBody').val();
+  commitAllPills();
+  if ($('.compose .pill.bad').length) return toast('Fix the red address first.');
+  if (!pillsOf($('#cTo')).length) return toast('Add at least one recipient.');
+  clearTimeout(draftTimer);
   $('#cSend').prop('disabled', true);
   try {
+    if (draftBusy) await draftBusy.catch(() => {});
+    const d = composeData(); const $c = $('.compose'); const tpl = $c.data('tpl');
+    const payload = { to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, from: d.from || undefined, replyToId: d.replyToId, draftId: $c.data('draftId') || undefined };
+    if (tpl) { // message first, then the template block
+      const head = d.htmlMode ? d.text : `<div style="white-space:pre-wrap">${esc(d.text)}</div>`;
+      payload.html = `${head}<br><br>${tpl.html}`;
+      if (!d.htmlMode) payload.text = `${d.text}\n\n${new DOMParser().parseFromString(cleanTpl(tpl.html), 'text/html').body.textContent.replace(/\n{3,}/g, '\n\n').trim()}`;
+    } else payload[d.htmlMode ? 'html' : 'text'] = d.text;
     await api('/api/send', { method: 'POST', body: JSON.stringify(payload) });
+    const did = payload.draftId;
     closeCompose(); toast('Sent');
+    if (did) { await store.remove('drafts', did); if (meta.drafts.total) meta.drafts.total -= 1; await saveMeta('drafts'); }
     await syncFolder('sent', false).catch(() => {});
-    if (state.folder === 'sent') await showFolder();
+    if (state.folder === 'sent' || state.folder === 'drafts') await showFolder(); else renderStatus();
   } catch (e) { toast(e.message); }
   $('#cSend').prop('disabled', false);
 }
@@ -665,7 +790,11 @@ async function deleteMail(id) { // id: a row swiped in the list; none: the messa
   const m = id ? { id } : state.openMail; const folder = state.folder;
   if (!m) return;
   if (!navigator.onLine) return toast('Go online to delete mail.');
-  if (!(await askConfirm({ title: 'Delete message?', message: 'It is removed from every device and cannot be recovered.', ok: 'Delete', danger: true }))) return;
+  const hard = folder === 'trash' || folder === 'drafts';
+  const ask = folder === 'drafts' ? { title: 'Discard draft?', message: 'This draft is deleted from every device.', ok: 'Discard', danger: true }
+    : hard ? { title: 'Delete forever?', message: 'It is removed from every device and cannot be recovered.', ok: 'Delete forever', danger: true }
+      : { title: 'Move to Bin?', message: 'You can restore it from the Bin for 30 days.', ok: 'Move to Bin' };
+  if (!(await askConfirm(ask))) return;
   const row = await store.get(folder, m.id);
   try {
     await api(`/api/mails/${encodeURIComponent(m.id)}?folder=${folder}`, { method: 'DELETE' });
@@ -680,7 +809,37 @@ async function deleteMail(id) { // id: a row swiped in the list; none: the messa
   }
   if (!id || state.openId === id) hideReader();
   await showFolder();
-  toast('Deleted');
+  toast(hard ? 'Deleted' : 'Moved to Bin');
+  if (!hard) syncFolder('trash', false).then(renderStatus).catch(() => {});
+}
+
+async function restoreMail(id) {
+  const m = id ? { id } : state.openMail;
+  if (!m || state.folder !== 'trash') return;
+  if (!navigator.onLine) return toast('Go online to restore mail.');
+  let r;
+  try { r = await api(`/api/mails/${encodeURIComponent(m.id)}/restore`, { method: 'POST' }); } catch (e) { return toast(e.message); }
+  await store.remove('trash', m.id);
+  if (meta.trash.total) meta.trash.total -= 1;
+  await saveMeta('trash');
+  // Put it straight back: a normal sync only fetches mail newer than the newest one saved, and a restored mail is older.
+  if (r.mail) {
+    await store.put(r.folder, [r.mail]);
+    meta[r.folder].total = (meta[r.folder].total || 0) + 1; await saveMeta(r.folder);
+    if (r.folder === 'inbox' && !r.mail.read) { meta.app.unread += 1; await saveMeta('app'); }
+  }
+  if (!id || state.openId === id) hideReader();
+  await showFolder();
+  toast(r.folder === 'sent' ? 'Restored to Sent' : 'Restored to Inbox');
+}
+
+async function emptyBin() {
+  if (!navigator.onLine) return toast('Go online to empty the Bin.');
+  if (!(await askConfirm({ title: 'Empty Bin?', message: 'Everything in the Bin is deleted forever.', ok: 'Empty Bin', danger: true }))) return;
+  try { await api('/api/trash', { method: 'DELETE' }); } catch (e) { return toast(e.message); }
+  for (const r of await store.list('trash', 100000)) await store.remove('trash', r.id);
+  meta.trash = {}; await saveMeta('trash');
+  hideReader(); await showFolder(); toast('Bin emptied');
 }
 
 // Swipe action: flip one inbox message between read and unread (same server calls as opening / "Mark as unread").
@@ -995,6 +1154,7 @@ const touchEnd = (e) => {
     if (cancelled) return;
     if (dx <= -SWIPE_AT) deleteMail(id);
     else if (dx >= SWIPE_AT && state.folder === 'inbox') toggleReadById(id);
+    else if (dx >= SWIPE_AT && state.folder === 'trash') restoreMail(id);
   } else if (mode === 'pull') {
     const pulled = Math.min(110, touch.dy * 0.5);
     pullTo(0, animate);
@@ -1019,7 +1179,8 @@ $('#folders').on('click', '.nav-link', function (e) {
   e.preventDefault();
   $(this).addClass('active').siblings().removeClass('active');
   state.folder = this.dataset.folder;
-  $('#folderTitle').text(state.folder === 'sent' ? 'Sent' : 'Inbox');
+  $('#folderTitle').text(TITLES[state.folder] || 'Inbox');
+  $('#btnEmptyBin').toggleClass('d-none', state.folder !== 'trash');
   setFilter('all'); $('.mailbox-header').removeClass('searching');
   $('#search').val('');
   hideReader();
@@ -1041,7 +1202,23 @@ $('.mailbox-search .form-control').on('focusin focusout', function (e) { $(this)
 $('.menu-compose').on('click', (e) => { e.preventDefault(); openCompose(); });
 $('.compose-title, .nav-link-minimize').on('click', function (e) { e.preventDefault(); $(this).closest('.compose').toggleClass('minimize'); });
 $('.nav-link-fullscreen').on('click', function (e) { e.preventDefault(); $(this).closest('.compose').toggleClass('fullscreen'); });
-$('.nav-link-close, #cDiscard').on('click', (e) => { e.preventDefault(); closeCompose(); });
+$('.nav-link-close').on('click', async (e) => { e.preventDefault(); const saved = await saveDraft(); closeCompose(); if (saved) toast('Draft saved'); });
+$('#cDiscard').on('click', async (e) => {
+  e.preventDefault();
+  if (!$('.compose').data('draftId') && composeEmpty(composeData())) return closeCompose();
+  if (!(await askConfirm({ title: 'Discard draft?', message: 'This message is deleted.', ok: 'Discard', danger: true }))) return;
+  clearTimeout(draftTimer); composeDirty = false;
+  if (draftBusy) await draftBusy.catch(() => {});
+  const did = $('.compose').data('draftId');
+  if (did && navigator.onLine) {
+    try {
+      await api(`/api/mails/${encodeURIComponent(did)}?folder=drafts`, { method: 'DELETE' });
+      await store.remove('drafts', did); meta.drafts.total = Math.max(0, (meta.drafts.total || 1) - 1); await saveMeta('drafts');
+      if (state.folder === 'drafts') await showFolder(); else renderStatus();
+    } catch (er) { toast(er.message); }
+  }
+  closeCompose();
+});
 $('#cSend').on('click', sendMail);
 
 // keep the saved copy fresh: when back online, when the app is reopened, and every couple of minutes
@@ -1075,8 +1252,8 @@ $(document).on('keydown', (e) => {
   const items = $('#mailGroup .mail-item');
   const i = items.index(items.filter('.active'));
   if (e.key === '/') { e.preventDefault(); openSearch(); }
-  else if (e.key === 'j' && items.length) items.eq(Math.min(i + 1, items.length - 1)).trigger('click');
-  else if (e.key === 'k' && items.length) items.eq(Math.max(i - 1, 0)).trigger('click');
+  else if (e.key === 'j' && items.length && state.folder !== 'drafts') items.eq(Math.min(i + 1, items.length - 1)).trigger('click');
+  else if (e.key === 'k' && items.length && state.folder !== 'drafts') items.eq(Math.max(i - 1, 0)).trigger('click');
   else if (e.key === 'r' && state.openMail && state.folder === 'inbox') { e.preventDefault(); startReply(); }
   else if (e.key === 'c') { e.preventDefault(); openCompose(); }
 });
@@ -1105,4 +1282,74 @@ $('#buildReload').on('click', async (e) => {
   e.preventDefault();
   try { await Promise.all((await caches.keys()).map((k) => caches.delete(k))); } catch (err) { /* ignore */ }
   location.reload();
+});
+
+// ---- recipient pills, template prompt, bin actions, template manager ----
+$('#cTo, #cCc, #cBcc').each(function () { initPillBox($(this)); });
+$(document).on('click', '.pill-box', function () { $(this).find('.pill-input').trigger('focus'); });
+$(document).on('click', '.pill-x', function (e) { e.preventDefault(); e.stopPropagation(); $(this).closest('.pill').remove(); queueDraft(); });
+$(document).on('click', '.pill-text', function (e) { // tap a pill to edit it
+  e.stopPropagation();
+  const $p = $(this).closest('.pill'); const $box = $p.closest('.pill-box'); const addr = $p[0].dataset.addr;
+  $p.remove(); $box.find('.pill-input').val(addr).trigger('focus');
+});
+$(document).on('keydown', '.pill-input', function (e) {
+  if (['Enter', ',', ';', ' '].includes(e.key) && this.value.trim()) { e.preventDefault(); commitPill($(this)); }
+  else if (e.key === 'Tab' && this.value.trim()) commitPill($(this));
+  else if (e.key === 'Backspace' && !this.value) { $(this).closest('.pill-box').find('.pill').last().remove(); queueDraft(); }
+});
+$(document).on('input', '.pill-input', function () { if (/[,;\s]$/.test(this.value)) commitPill($(this)); }); // phone keyboards
+$(document).on('focusout', '.pill-input', function () { commitPill($(this)); });
+$(document).on('paste', '.pill-input', function (e) {
+  const t = (e.originalEvent.clipboardData || window.clipboardData).getData('text');
+  if (!t) return;
+  e.preventDefault(); addPills($(this).closest('.pill-box'), t);
+});
+$('#cCcToggle').on('click', (e) => { e.preventDefault(); showCc(true); $('#cCc .pill-input').trigger('focus'); });
+$('#cSubject, #cBody, #cFrom, #cHtml').on('input change', queueDraft);
+
+$('#cTplAdd').on('click', () => {
+  const t = (templates || []).find((x) => x.id === $('#cTplSel').val());
+  if (t) { attachTemplate({ name: t.name, html: t.html }); queueDraft(); }
+});
+$('#cTplSkip').on('click', () => { $('.compose').data('tplSkipped', true); $('#cTpl').addClass('d-none'); });
+$('#cTplRemove').on('click', () => { attachTemplate(null); $('.compose').data('tplSkipped', true); queueDraft(); });
+
+$('#btnRestoreTop, #mnRestore').on('click', (e) => { e.preventDefault(); restoreMail(); });
+$('#btnEmptyBin').on('click', (e) => { e.preventDefault(); emptyBin(); });
+
+const TPL_EXAMPLE = '<table cellpadding="0" cellspacing="0" style="font-family:Arial,sans-serif;font-size:13px;color:#202124;border:1px solid #dadce0;border-radius:6px;padding:14px;max-width:360px">\n'
+  + '  <tr><td><div style="font-size:18px;font-weight:bold">Your Name</div>\n'
+  + '  <div style="color:#5f6368;margin:4px 0 8px">Your role or school<br>City, Country</div>\n'
+  + '  <a href="https://example.com" style="color:#5f6368">https://example.com</a></td></tr>\n</table>';
+const tplModal = () => window.bootstrap.Modal.getOrCreateInstance(document.getElementById('tplModal'));
+function fillTplPick(selectId) {
+  $('#tplPick').html('<option value="">+ New template</option>' + (templates || []).map((t) => `<option value="${esc(t.id)}">${esc(t.name)}${t.isDefault ? ' (first)' : ''}</option>`).join(''))
+    .val(selectId && (templates || []).some((t) => t.id === selectId) ? selectId : (templates && templates[0] ? templates[0].id : ''));
+  fillTplEditor();
+}
+function fillTplEditor() {
+  const t = (templates || []).find((x) => x.id === $('#tplPick').val());
+  $('#tplName').val(t ? t.name : ''); $('#tplHtml').val(t ? t.html : ''); $('#tplDefault').prop('checked', Boolean(t && t.isDefault));
+  $('#tplDelete').toggleClass('d-none', !t); $('#tplPreview').html(cleanTpl($('#tplHtml').val()));
+}
+$('#navTemplates').on('click', async (e) => {
+  e.preventDefault(); closeLayer('side');
+  if (!navigator.onLine) return toast('Go online to manage templates.');
+  await loadTemplates(true); fillTplPick(); tplModal().show();
+});
+$('#tplPick').on('change', fillTplEditor);
+$('#tplHtml').on('input', () => $('#tplPreview').html(cleanTpl($('#tplHtml').val())));
+$('#tplExample').on('click', () => { $('#tplHtml').val(TPL_EXAMPLE).trigger('input'); if (!$('#tplName').val()) $('#tplName').val('Signature'); });
+$('#tplSave').on('click', async () => {
+  const btn = $('#tplSave').prop('disabled', true);
+  try {
+    const r = await api('/api/templates', { method: 'POST', body: JSON.stringify({ id: $('#tplPick').val() || undefined, name: $('#tplName').val(), html: $('#tplHtml').val(), isDefault: $('#tplDefault').is(':checked') }) });
+    await loadTemplates(true); fillTplPick(r.id); toast('Template saved');
+  } catch (e) { toast(e.message); }
+  btn.prop('disabled', false);
+});
+$('#tplDelete').on('click', async () => {
+  const id = $('#tplPick').val(); if (!id) return;
+  try { await api(`/api/templates/${encodeURIComponent(id)}`, { method: 'DELETE' }); await loadTemplates(true); fillTplPick(); toast('Template deleted'); } catch (e) { toast(e.message); }
 });
