@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover">
     <meta name="theme-color" content="#141316">
     <meta name="robots" content="noindex">
+    <meta name="build-commit" content="">
+    <meta name="build-repo" content="">
+    <meta name="build-branch" content="">
     <title>Mail</title>
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/icon-192.png">
@@ -52,6 +55,12 @@
           <a href="#" class="nav-link active" data-folder="inbox"><i class="ri-inbox-line"></i> <span>Inbox</span> <small id="unreadCount"></small><small id="totalInbox" class="total"></small></a>
           <a href="#" class="nav-link" data-folder="sent"><i class="ri-send-plane-2-line"></i> <span>Sent</span> <small id="totalSent" class="total"></small></a>
         </nav>
+      </div>
+      <div id="buildInfo" class="sidebar-footer" aria-live="polite">
+        <label class="sidebar-label">Build</label>
+        <a id="buildLink" href="#" target="_blank" rel="noopener" title="Open this commit on GitHub"></a>
+        <small id="buildMeta"></small>
+        <a id="buildReload" href="#" class="d-none" role="button">New version available. Tap to update</a>
       </div>
     </div>
 
