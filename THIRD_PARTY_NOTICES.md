@@ -4,7 +4,7 @@ mail-server is released under the [MIT License](LICENSE). The web app in `public
 
 ## SmartMail (interface template)
 
-The mailbox interface (markup, layout and the compiled stylesheet in `public/assets/css/style.min.css`) is based on [SmartMail](https://github.com/themepixels/smartmail) by ThemePixels, released under the MIT License. The colours are overridden with the Catppuccin Mocha palette, and the behaviour is rewritten to work with this project's API. The original license is also kept at `public/vendor/SMARTMAIL-LICENSE.txt`.
+The mailbox interface (markup, layout and the compiled stylesheet in `public/assets/css/style.min.css`) is based on [SmartMail](https://github.com/themepixels/smartmail) by ThemePixels, released under the MIT License. The colours are overridden with a neutral dark palette, and the behaviour is rewritten to work with this project's API. The original license is also kept at `public/vendor/SMARTMAIL-LICENSE.txt`.
 
 ```
 MIT License

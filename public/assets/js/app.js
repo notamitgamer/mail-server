@@ -1057,8 +1057,10 @@ function setFilter(f) {
   state.filter = f;
   $('#btnFilter').toggleClass('d-none', state.folder !== 'inbox').toggleClass('on', f === 'unread')
     .attr({ 'aria-pressed': String(f === 'unread'), title: f === 'unread' ? 'Showing unread only' : 'Show unread only' });
+  $('#filterChip').toggleClass('d-none', !(f === 'unread' && state.folder === 'inbox'));
   if (state.mails) renderList();
 }
+$('#filterChip button').on('click', () => setFilter('all'));
 $('#btnFilter').on('click', (e) => { e.preventDefault(); setFilter(state.filter === 'unread' ? 'all' : 'unread'); });
 const openSearch = () => { $('.mailbox-header').addClass('searching'); $('#search').trigger('focus'); };
 $('#btnSearch').on('click', (e) => { e.preventDefault(); openSearch(); });
