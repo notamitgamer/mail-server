@@ -1080,3 +1080,25 @@ $(document).on('keydown', (e) => {
   else if (e.key === 'r' && state.openMail && state.folder === 'inbox') { e.preventDefault(); startReply(); }
   else if (e.key === 'c') { e.preventDefault(); openCompose(); }
 });
+
+// ---- build info: which commit this page was loaded with, and which one the server runs now ----
+(async function showBuild() {
+  const meta = (n) => (document.querySelector(`meta[name="${n}"]`)?.content || '').trim();
+  const loaded = { commit: meta('build-commit'), repo: meta('build-repo') || 'notamitgamer/mail-server', branch: meta('build-branch') };
+  let live = null;
+  const paint = (offline) => {
+    const b = live || loaded;
+    const $link = $('#buildLink');
+    if (b.commit) $link.text(b.commit.slice(0, 7)).attr('href', `https://github.com/${b.repo}/commit/${b.commit}`).removeClass('d-none');
+    else $link.text('dev build').removeAttr('href');
+    $('#buildMeta').text([b.branch, offline ? 'offline, last known' : ''].filter(Boolean).join(' · '));
+    $('#buildReload').toggleClass('d-none', !(live && live.commit && loaded.commit && live.commit !== loaded.commit));
+  };
+  paint(false);
+  try { live = await (await fetch('/api/version', { cache: 'no-store' })).json(); paint(false); } catch (e) { paint(true); }
+})();
+$('#buildReload').on('click', async (e) => {
+  e.preventDefault();
+  try { await Promise.all((await caches.keys()).map((k) => caches.delete(k))); } catch (err) { /* ignore */ }
+  location.reload();
+});

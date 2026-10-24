@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const { Resend } = require('resend');
 const { Webhook } = require('svix');
@@ -591,6 +592,35 @@ app.post('/api/push/test', requireOwner, handle(async (req, res) => {
 
 app.get('/ping', (req, res) => {
   res.status(200).send('Server is awake!');
+});
+
+// Which commit is running. Render sets RENDER_GIT_COMMIT / RENDER_GIT_BRANCH / RENDER_GIT_REPO_SLUG on every deploy.
+const BUILD = (() => {
+  const commit = (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').trim();
+  const repo = (process.env.RENDER_GIT_REPO_SLUG || 'notamitgamer/mail-server').trim();
+  const branch = (process.env.RENDER_GIT_BRANCH || '').trim();
+  return {
+    commit: /^[0-9a-f]{7,40}$/i.test(commit) ? commit.toLowerCase() : '',
+    repo: /^[\w.-]+\/[\w.-]+$/.test(repo) ? repo : 'notamitgamer/mail-server',
+    branch: /^[\w./-]{1,100}$/.test(branch) ? branch : '',
+  };
+})();
+
+app.get('/api/version', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(BUILD);
+});
+
+// The page is served with the commit it was built from, so the app can tell when a cached copy is out of date.
+app.get(['/', '/index.html'], (req, res, next) => {
+  fs.readFile(path.join(__dirname, 'public', 'index.html'), 'utf8', (err, html) => {
+    if (err) return next();
+    res.set('Cache-Control', 'no-cache');
+    res.type('html').send(html
+      .replace('<meta name="build-commit" content="">', `<meta name="build-commit" content="${BUILD.commit}">`)
+      .replace('<meta name="build-repo" content="">', `<meta name="build-repo" content="${BUILD.repo}">`)
+      .replace('<meta name="build-branch" content="">', `<meta name="build-branch" content="${BUILD.branch}">`));
+  });
 });
 
 app.use(express.static(path.join(__dirname, 'public'), {

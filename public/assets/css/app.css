@@ -447,3 +447,14 @@ input[type="checkbox"] { accent-color: var(--peach); }
 .btn-ghost { background: transparent; border: 1px solid var(--surface1); color: var(--subtext0); }
 .btn-ghost:focus-visible { background: var(--surface1); color: var(--text); }
 @media (hover: hover) { .btn-ghost:hover { background: var(--surface1); color: var(--text); } }
+
+/* ---- build info at the bottom of the sidebar ---- */
+.sidebar-footer { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 25px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--surface0); background: var(--mantle); font-size: 12px; line-height: 1.5; }
+.sidebar-footer .sidebar-label { margin-bottom: 2px; }
+.sidebar-footer #buildLink { display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; color: var(--peach); text-decoration: none; }
+.sidebar-footer #buildLink:not([href]) { color: var(--overlay1); }
+@media (hover: hover) { .sidebar-footer #buildLink[href]:hover { text-decoration: underline; } }
+.sidebar-footer small { display: block; color: var(--overlay1); }
+.sidebar-footer small:empty { display: none; }
+.sidebar-footer #buildReload { display: block; margin-top: 6px; color: var(--crust); background: var(--peach); border-radius: 8px; padding: 6px 10px; text-decoration: none; font-weight: 500; }
+.sidebar-footer #buildReload.d-none { display: none; }
