@@ -367,3 +367,16 @@ input[type="checkbox"] { accent-color: var(--peach); }
 .mail-group { padding-top: 12px; padding-bottom: 104px; }
 .mail-day { padding: 18px 20px 8px; }
 .filter-chip { margin-top: 12px; margin-bottom: 4px; }
+
+/* ---- sign-in screen ---- */
+.signin-logo { width: 72px; height: 72px; border-radius: 20px; margin-bottom: 16px; box-shadow: 0 6px 24px rgba(0, 0, 0, .5); }
+.signin h3 { font-size: 28px; font-weight: 500; }
+.signin-note { padding: 16px 18px; background: var(--mantle); border: 1px solid var(--surface0); border-radius: 12px; }
+/* Google's own dark-theme button: #131314 fill, #8E918F outline, #E3E3E3 text, standard four-colour G */
+.btn-google { display: inline-flex; align-items: center; justify-content: center; gap: 12px; height: 44px; padding: 0 16px 0 12px; margin-top: 8px;
+  background: #131314; color: #e3e3e3; border: 1px solid #8e918f; border-radius: 999px; font: 500 14px/20px Roboto, "Lexend", Arial, sans-serif; cursor: pointer; transition: background .15s; }
+.btn-google:hover { background: #1f2022; }
+.btn-google:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+.btn-google:active { background: #2a2b2d; }
+.btn-google.d-none { display: none; }
+.signin-logo { border: 1px solid var(--surface0); }
