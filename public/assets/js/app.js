@@ -1066,7 +1066,7 @@ const openSearch = () => { $('.mailbox-header').addClass('searching'); $('#searc
 $('#btnSearch').on('click', (e) => { e.preventDefault(); openSearch(); });
 $('#search').on('blur', () => { if (!$('#search').val()) $('.mailbox-header').removeClass('searching'); })
   .on('keydown', (e) => { if (e.key === 'Escape') { $('#search').val('').trigger('input').trigger('blur'); } });
-$('#btnFwdTop').on('click', (e) => { e.preventDefault(); openForward(); });
+$('#btnFwdTop, #btnForward').on('click', (e) => { e.preventDefault(); openForward(); });
 $('#btnUnreadTop').on('click', (e) => { e.preventDefault(); markUnread(); });
 $('#btnDelTop').on('click', (e) => { e.preventDefault(); deleteMail(); });
 
