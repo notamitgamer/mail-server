@@ -516,3 +516,21 @@ input[type="checkbox"] { accent-color: var(--peach); }
     border-radius: 0 !important;
   }
 }
+
+/* Fix mobile compose message textarea expansion */
+@media (max-width: 767.98px) {
+  .compose-body {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow-y: auto !important;
+  }
+  .compose-body .form-group:has(#cBody),
+  .compose-body #cBody {
+    flex: 1 1 auto !important;
+    min-height: 180px !important;
+  }
+  .compose-body #cBody {
+    height: 100% !important;
+    width: 100% !important;
+  }
+}
