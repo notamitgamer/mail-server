@@ -497,3 +497,22 @@ input[type="checkbox"] { accent-color: var(--peach); }
   #cBody { min-height: 140px; }
   .tpl-preview { max-height: 150px; }
 }
+
+/* Mobile full-screen compose fix */
+@media (max-width: 767.98px) {
+  .compose {
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    padding: 0 !important;
+  }
+  .compose-content {
+    width: 100vw !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+  }
+}

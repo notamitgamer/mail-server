@@ -1,0 +1,98 @@
+diff --git a/public/assets/js/app.js b/public/assets/js/app.js
+index 0f01946..67c1201 100644
+--- a/public/assets/js/app.js
++++ b/public/assets/js/app.js
+@@ -1081,22 +1081,26 @@ $(document).on('keydown', (e) => {
+   else if (e.key === 'c') { e.preventDefault(); openCompose(); }
+ });
+ 
+-// ---- build info: which commit this page was loaded with, and which one the server runs now ----
+-(async function showBuild() {
+-  const meta = (n) => (document.querySelector(`meta[name="${n}"]`)?.content || '').trim();
+-  const loaded = { commit: meta('build-commit'), repo: meta('build-repo') || 'notamitgamer/mail-server', branch: meta('build-branch') };
+-  let live = null;
+-  const paint = (offline) => {
+-    const b = live || loaded;
+-    const $link = $('#buildLink');
+-    if (b.commit) $link.text(b.commit.slice(0, 7)).attr('href', `https://github.com/${b.repo}/commit/${b.commit}`).removeClass('d-none');
+-    else $link.text('dev build').removeAttr('href');
+-    $('#buildMeta').text([b.branch, offline ? 'offline, last known' : ''].filter(Boolean).join(' · '));
+-    $('#buildReload').toggleClass('d-none', !(live && live.commit && loaded.commit && live.commit !== loaded.commit));
+-  };
+-  paint(false);
+-  try { live = await (await fetch('/api/version', { cache: 'no-store' })).json(); paint(false); } catch (e) { paint(true); }
+-})();
++// ---- build info: the commit this code was built from, and the commit the server runs now ----
++const BUILD_LOADED = typeof __BUILD__ !== 'undefined' ? __BUILD__ : { commit: '', repo: 'notamitgamer/mail-server', branch: '' };
++let buildLive = null;
++function paintBuild(offline) {
++  const b = BUILD_LOADED.commit ? BUILD_LOADED : (buildLive || BUILD_LOADED);
++  const $link = $('#buildLink');
++  if (b.commit) $link.text(b.commit.slice(0, 7)).attr('href', `https://github.com/${b.repo}/commit/${b.commit}`);
++  else $link.text('dev build').removeAttr('href');
++  $('#buildMeta').text([b.branch, offline ? 'offline' : ''].filter(Boolean).join(' · '));
++  const stale = !!(buildLive && buildLive.commit && BUILD_LOADED.commit && buildLive.commit !== BUILD_LOADED.commit);
++  $('#buildReload').toggleClass('d-none', !stale).text(stale ? `New version ${buildLive.commit.slice(0, 7)} available. Tap to update` : '');
++}
++async function checkBuild() {
++  try { buildLive = await (await fetch('/api/version', { cache: 'no-store' })).json(); paintBuild(false); } catch (e) { paintBuild(true); }
++}
++paintBuild(false);
++checkBuild();
++document.addEventListener('visibilitychange', () => { if (!document.hidden) checkBuild(); });
++window.addEventListener('online', checkBuild);
++setInterval(checkBuild, 10 * 60 * 1000);
+ $('#buildReload').on('click', async (e) => {
+   e.preventDefault();
+   try { await Promise.all((await caches.keys()).map((k) => caches.delete(k))); } catch (err) { /* ignore */ }
+diff --git a/public/index.html b/public/index.html
+index 0d0bc78..a035880 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -5,9 +5,6 @@
+     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover">
+     <meta name="theme-color" content="#141316">
+     <meta name="robots" content="noindex">
+-    <meta name="build-commit" content="">
+-    <meta name="build-repo" content="">
+-    <meta name="build-branch" content="">
+     <title>Mail</title>
+     <link rel="manifest" href="/manifest.webmanifest">
+     <link rel="icon" href="/icons/icon-192.png">
+diff --git a/public/sw.js b/public/sw.js
+index 76c770e..0395137 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,6 +1,6 @@
+ // Service worker: keeps the app itself (shell + Firebase sign-in code) available offline.
+ // Your mail is NOT stored here; app.js keeps it in IndexedDB. Bump CACHE when shipping changes to cached files.
+-const CACHE = 'mail-shell-v20';
++const CACHE = 'mail-shell-v21';
+ const SHELL = [
+   '/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png',
+   '/assets/css/style.min.css', '/assets/css/app.css', '/assets/js/app.js',
+diff --git a/server.js b/server.js
+index 8c0f6fb..643b1fe 100644
+--- a/server.js
++++ b/server.js
+@@ -611,15 +611,13 @@ app.get('/api/version', (req, res) => {
+   res.json(BUILD);
+ });
+ 
+-// The page is served with the commit it was built from, so the app can tell when a cached copy is out of date.
+-app.get(['/', '/index.html'], (req, res, next) => {
+-  fs.readFile(path.join(__dirname, 'public', 'index.html'), 'utf8', (err, html) => {
++// app.js is served with the commit it was built from on its first line, so the code that is actually running
++// knows its own version (a cached copy of an older app.js reports the older commit).
++app.get('/assets/js/app.js', (req, res, next) => {
++  fs.readFile(path.join(__dirname, 'public', 'assets', 'js', 'app.js'), 'utf8', (err, js) => {
+     if (err) return next();
+     res.set('Cache-Control', 'no-cache');
+-    res.type('html').send(html
+-      .replace('<meta name="build-commit" content="">', `<meta name="build-commit" content="${BUILD.commit}">`)
+-      .replace('<meta name="build-repo" content="">', `<meta name="build-repo" content="${BUILD.repo}">`)
+-      .replace('<meta name="build-branch" content="">', `<meta name="build-branch" content="${BUILD.branch}">`));
++    res.type('application/javascript').send(`const __BUILD__ = ${JSON.stringify(BUILD)};\n${js}`);
+   });
+ });
+ 

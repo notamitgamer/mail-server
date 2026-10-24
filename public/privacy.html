@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover">
+    <meta name="theme-color" content="#141316">
+    <title>Privacy Policy - Mail</title>
+    <link rel="icon" href="/icons/icon-192.png">
+    <link rel="stylesheet" href="assets/css/style.min.css">
+    <link rel="stylesheet" href="assets/css/app.css">
+    <style>
+      body { min-height: 100vh; padding: 40px 20px; }
+      .privacy-container { max-width: 680px; margin: 0 auto; line-height: 1.7; }
+      .privacy-container h1 { color: var(--text); margin-bottom: 24px; font-weight: 600; }
+      .privacy-container h2 { color: var(--peach); margin-top: 32px; margin-bottom: 12px; font-size: 1.25rem; font-weight: 500; }
+      .privacy-container p, .privacy-container li { color: var(--subtext1); font-size: 15px; }
+      .privacy-container ul { padding-left: 20px; }
+      .privacy-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 24px; color: var(--peach); text-decoration: none; }
+      .privacy-back:hover { text-decoration: underline; color: var(--peach-hi); }
+    </style>
+  </head>
+  <body>
+    <main class="privacy-container">
+      <a href="/" class="privacy-back">&larr; Back to Mailbox</a>
+      <h1>Privacy Policy</h1>
+      <p class="text-muted">Last updated: 2026</p>
+
+      <h2>Overview</h2>
+      <p>This application is a self-hosted personal email router and mailbox. It is designed for private, single-owner use and does not sell, track, or share personal data with advertisers.</p>
+
+      <h2>Information We Handle</h2>
+      <ul>
+        <li><strong>Google Account Information:</strong> When signing in with Google OAuth, we verify your email address to authenticate ownership. Only the authorized administrator account configured for this instance is granted access.</li>
+        <li><strong>Email Data:</strong> Incoming emails received via Resend are parsed and archived in your instance's Firebase Firestore database. This data includes sender details, recipient addresses, subject lines, timestamps, and message contents.</li>
+        <li><strong>Push Notification Subscriptions:</strong> If push notifications are enabled, your browser's push subscription endpoint and cryptographic keys are stored securely in Firestore to route delivery notifications.</li>
+      </ul>
+
+      <h2>Third-Party Services</h2>
+      <p>This service interacts with the following external providers to function:</p>
+      <ul>
+        <li><strong>Google Identity Services & Firebase:</strong> For identity authentication and database storage.</li>
+        <li><strong>Resend:</strong> For receiving inbound email webhooks and sending outbound emails.</li>
+      </ul>
+
+      <h2>Data Retention &amp; Deletion</h2>
+      <p>Emails moved to the Bin are purged automatically after 30 days. Trashed emails and drafts can be permanently removed at any time through the interface.</p>
+
+      <h2>Contact</h2>
+      <p>For questions or security disclosures regarding this deployment, contact <a href="mailto:mail@amit.is-a.dev">mail@amit.is-a.dev</a>.</p>
+    </main>
+  </body>
+</html>
