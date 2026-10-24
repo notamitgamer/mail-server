@@ -759,6 +759,25 @@ app.get('/assets/js/app.js', (req, res, next) => {
 
 app.get("/privacy", (req, res) => res.sendFile(path.join(__dirname, "public", "privacy.html")));
 
+// Proxy Firebase Auth handler to the underlying Firebase app domain
+app.get("/__/auth/*", async (req, res) => {
+  const targetUrl = "https://mail-server-notamitgamer.firebaseapp.com" + req.originalUrl;
+  try {
+    const upstream = await fetch(targetUrl);
+    res.status(upstream.status);
+    for (const [k, v] of upstream.headers.entries()) {
+      if (!["content-encoding", "content-length", "transfer-encoding"].includes(k.toLowerCase())) {
+        res.setHeader(k, v);
+      }
+    }
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.send(buf);
+  } catch (err) {
+    console.error("Auth proxy error:", err);
+    res.status(502).send("Auth proxy error");
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     if (/(\.html|\.webmanifest|sw\.js)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
