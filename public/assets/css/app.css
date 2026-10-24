@@ -290,3 +290,9 @@ input[type="checkbox"] { accent-color: var(--peach); }
 .mailcontent-header > .nav { display: flex; gap: 2px; margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--surface0); }
 .mailcontent-header .nav-link { border-radius: 6px; }
 .mailcontent-header .nav-danger:hover, .mailcontent-header .nav-danger:focus { color: var(--red); }
+
+/* phones/tablets: the extra reader icons live in the "More" menu there */
+@media (max-width: 1199px) {
+  #btnFwdTop, #btnUnreadTop, #btnDelTop { display: none; }
+  .mailcontent-header > .nav { margin-left: 0; padding-left: 0; border-left: 0; }
+}

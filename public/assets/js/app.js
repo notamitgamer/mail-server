@@ -440,7 +440,7 @@ const CLEAN = { WHOLE_DOCUMENT: true, FORBID_TAGS: ['meta', 'base', 'link', 'for
 const FRAME_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src https: data:"><base target="_blank">`;
 const FRAME_BASE = 'body{margin:0;padding:12px 4px;font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;word-wrap:break-word;overflow-x:auto}img{max-width:100%;height:auto}';
 const FRAME_LIGHT = `${FRAME_CSP}<style>html{background:#fff}${FRAME_BASE}body{color:#202124}a{color:#1a56db}</style>`;
-const FRAME_DARK = `${FRAME_CSP}<style>html{background:transparent}${FRAME_BASE}body{color:#cdd6f4}a{color:#89b4fa}</style>`;
+const FRAME_DARK = `${FRAME_CSP}<style>html{background:transparent;color-scheme:dark}${FRAME_BASE}body{color:#cdd6f4}a{color:#89b4fa}</style>`;
 
 // Phone back button / swipe: the reader and the sidebar are "layers" with their own history entry,
 // so back closes the layer instead of leaving the site.
