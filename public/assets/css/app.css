@@ -361,3 +361,9 @@ input[type="checkbox"] { accent-color: var(--peach); }
 .filter-chip button { border: 0; background: transparent; color: inherit; display: inline-flex; padding: 2px; border-radius: 50%; font-size: 16px; cursor: pointer; }
 .filter-chip button:hover { background: var(--surface2); }
 .appbar-actions > a.on:not(.mail-avatar) { color: var(--peach); }
+
+/* breathing room: app bar, first day label, and space under the last row for the compose button */
+.mailbox-header { min-height: 76px; padding-top: calc(14px + env(safe-area-inset-top)); padding-bottom: 14px; }
+.mail-group { padding-top: 12px; padding-bottom: 104px; }
+.mail-day { padding: 18px 20px 8px; }
+.filter-chip { margin-top: 12px; margin-bottom: 4px; }
