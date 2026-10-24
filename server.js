@@ -611,15 +611,13 @@ app.get('/api/version', (req, res) => {
   res.json(BUILD);
 });
 
-// The page is served with the commit it was built from, so the app can tell when a cached copy is out of date.
-app.get(['/', '/index.html'], (req, res, next) => {
-  fs.readFile(path.join(__dirname, 'public', 'index.html'), 'utf8', (err, html) => {
+// app.js is served with the commit it was built from on its first line, so the code that is actually running
+// knows its own version (a cached copy of an older app.js reports the older commit).
+app.get('/assets/js/app.js', (req, res, next) => {
+  fs.readFile(path.join(__dirname, 'public', 'assets', 'js', 'app.js'), 'utf8', (err, js) => {
     if (err) return next();
     res.set('Cache-Control', 'no-cache');
-    res.type('html').send(html
-      .replace('<meta name="build-commit" content="">', `<meta name="build-commit" content="${BUILD.commit}">`)
-      .replace('<meta name="build-repo" content="">', `<meta name="build-repo" content="${BUILD.repo}">`)
-      .replace('<meta name="build-branch" content="">', `<meta name="build-branch" content="${BUILD.branch}">`));
+    res.type('application/javascript').send(`const __BUILD__ = ${JSON.stringify(BUILD)};\n${js}`);
   });
 });
 

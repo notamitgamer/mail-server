@@ -1081,22 +1081,26 @@ $(document).on('keydown', (e) => {
   else if (e.key === 'c') { e.preventDefault(); openCompose(); }
 });
 
-// ---- build info: which commit this page was loaded with, and which one the server runs now ----
-(async function showBuild() {
-  const meta = (n) => (document.querySelector(`meta[name="${n}"]`)?.content || '').trim();
-  const loaded = { commit: meta('build-commit'), repo: meta('build-repo') || 'notamitgamer/mail-server', branch: meta('build-branch') };
-  let live = null;
-  const paint = (offline) => {
-    const b = live || loaded;
-    const $link = $('#buildLink');
-    if (b.commit) $link.text(b.commit.slice(0, 7)).attr('href', `https://github.com/${b.repo}/commit/${b.commit}`).removeClass('d-none');
-    else $link.text('dev build').removeAttr('href');
-    $('#buildMeta').text([b.branch, offline ? 'offline, last known' : ''].filter(Boolean).join(' · '));
-    $('#buildReload').toggleClass('d-none', !(live && live.commit && loaded.commit && live.commit !== loaded.commit));
-  };
-  paint(false);
-  try { live = await (await fetch('/api/version', { cache: 'no-store' })).json(); paint(false); } catch (e) { paint(true); }
-})();
+// ---- build info: the commit this code was built from, and the commit the server runs now ----
+const BUILD_LOADED = typeof __BUILD__ !== 'undefined' ? __BUILD__ : { commit: '', repo: 'notamitgamer/mail-server', branch: '' };
+let buildLive = null;
+function paintBuild(offline) {
+  const b = BUILD_LOADED.commit ? BUILD_LOADED : (buildLive || BUILD_LOADED);
+  const $link = $('#buildLink');
+  if (b.commit) $link.text(b.commit.slice(0, 7)).attr('href', `https://github.com/${b.repo}/commit/${b.commit}`);
+  else $link.text('dev build').removeAttr('href');
+  $('#buildMeta').text([b.branch, offline ? 'offline' : ''].filter(Boolean).join(' · '));
+  const stale = !!(buildLive && buildLive.commit && BUILD_LOADED.commit && buildLive.commit !== BUILD_LOADED.commit);
+  $('#buildReload').toggleClass('d-none', !stale).text(stale ? `New version ${buildLive.commit.slice(0, 7)} available. Tap to update` : '');
+}
+async function checkBuild() {
+  try { buildLive = await (await fetch('/api/version', { cache: 'no-store' })).json(); paintBuild(false); } catch (e) { paintBuild(true); }
+}
+paintBuild(false);
+checkBuild();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkBuild(); });
+window.addEventListener('online', checkBuild);
+setInterval(checkBuild, 10 * 60 * 1000);
 $('#buildReload').on('click', async (e) => {
   e.preventDefault();
   try { await Promise.all((await caches.keys()).map((k) => caches.delete(k))); } catch (err) { /* ignore */ }
