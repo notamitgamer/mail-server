@@ -43,6 +43,8 @@ Shown with made-up demo mail.
 - Receives mail through a Resend webhook and keeps it in your own Firestore database
 - Mobile-first web app (PWA) with offline cache, swipe actions and pull to refresh
 - Reply, forward and compose from your own addresses
+- Bin (restorable for 30 days), Drafts saved as you type, and reusable HTML templates offered when you write a mail
+- To, Cc and Bcc fields that turn each address into a pill
 - All / Unread filter, one-click reader actions and keyboard shortcuts (`j`/`k` move, `r` reply, `c` compose, `/` search)
 - Web Push notifications that open the message straight away
 - Single-owner by design: sign in with one Google account

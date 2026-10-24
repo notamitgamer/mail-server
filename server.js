@@ -333,6 +333,7 @@ const toFull = (id, d, folder) => ({
   attachments: d.attachments || [],
   truncated: Boolean(d.truncated),
   templateHtml: d.templateHtml || null, // drafts only
+  templateName: d.templateName || null,
   htmlMode: Boolean(d.htmlMode),
   replyToId: d.replyToId || null,
 });
@@ -482,7 +483,7 @@ app.post('/api/mails/:id/restore', requireOwner, handle(async (req, res) => {
   batch.set(db.collection(FOLDERS[folder].collection).doc(snap.id), rest);
   batch.delete(ref);
   await batch.commit();
-  return res.json({ ok: true, folder });
+  return res.json({ ok: true, folder, mail: toFull(snap.id, rest, folder) });
 }));
 
 app.delete('/api/trash', requireOwner, handle(async (req, res) => {
@@ -511,7 +512,7 @@ app.post('/api/drafts', requireOwner, express.json({ limit: '1mb' }), handle(asy
     from: String(b.from || '').slice(0, 320),
     to: list(b.to), cc: list(b.cc), bcc: list(b.bcc),
     subject: String(b.subject || '').replace(/[\r\n]+/g, ' ').slice(0, 500),
-    text, html: null, templateHtml, htmlMode: Boolean(b.htmlMode),
+    text, html: null, templateHtml, templateName: String(b.templateName || '').slice(0, 80), htmlMode: Boolean(b.htmlMode),
     replyToId: b.replyToId && ID_RE.test(b.replyToId) ? b.replyToId : null,
     snippet: makeSnippet({ text: text || htmlToText(templateHtml) }),
     attachments: [], read: true,

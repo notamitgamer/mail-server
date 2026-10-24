@@ -48,9 +48,15 @@
       </div>
       <div class="sidebar-body">
         <label class="sidebar-label">Mailboxes</label>
-        <nav class="nav flex-column mb-5" id="folders" aria-label="Mailboxes">
+        <nav class="nav flex-column mb-4" id="folders" aria-label="Mailboxes">
           <a href="#" class="nav-link active" data-folder="inbox"><i class="ri-inbox-line"></i> <span>Inbox</span> <small id="unreadCount"></small><small id="totalInbox" class="total"></small></a>
           <a href="#" class="nav-link" data-folder="sent"><i class="ri-send-plane-2-line"></i> <span>Sent</span> <small id="totalSent" class="total"></small></a>
+          <a href="#" class="nav-link" data-folder="drafts"><i class="ri-draft-line"></i> <span>Drafts</span> <small id="totalDrafts" class="total"></small></a>
+          <a href="#" class="nav-link" data-folder="trash"><i class="ri-delete-bin-line"></i> <span>Bin</span> <small id="totalTrash" class="total"></small></a>
+        </nav>
+        <label class="sidebar-label">Compose</label>
+        <nav class="nav flex-column mb-5" aria-label="Compose tools">
+          <a href="#" id="navTemplates" class="nav-link"><i class="ri-layout-top-line"></i> <span>Templates</span></a>
         </nav>
       </div>
       <div id="buildInfo" class="sidebar-footer" aria-live="polite">
@@ -72,6 +78,7 @@
         <div class="appbar-actions">
           <a href="#" id="btnSearch" role="button" title="Search" aria-label="Search"><i class="ri-search-line" aria-hidden="true"></i></a>
           <a href="#" id="btnFilter" role="button" title="Show unread only" aria-label="Show unread only" aria-pressed="false"><i class="ri-filter-3-line" aria-hidden="true"></i></a>
+          <a href="#" id="btnEmptyBin" class="d-none" role="button" title="Empty Bin" aria-label="Empty Bin"><i class="ri-delete-bin-2-line" aria-hidden="true"></i></a>
           <a href="#" id="btnNotify" class="d-none" role="button" title="Turn on notifications" aria-label="Turn on notifications"><i class="ri-notification-off-line" aria-hidden="true"></i></a>
           <a href="#" id="refresh" role="button" title="Refresh" aria-label="Refresh mail"><i class="ri-refresh-line" aria-hidden="true"></i></a>
           <a href="#" id="avatar" class="mail-avatar" role="button" title="Sign out" aria-label="Sign out"><span>m</span></a>
@@ -92,10 +99,12 @@
           <a href="#" id="btnFwdTop" class="nav-link quick" role="button" title="Forward" aria-label="Forward"><i class="ri-share-forward-line" aria-hidden="true"></i></a>
           <a href="#" id="btnUnreadTop" class="nav-link quick" role="button" title="Mark as unread" aria-label="Mark as unread"><i class="ri-mail-unread-line" aria-hidden="true"></i></a>
           <span class="nav-sep" aria-hidden="true"></span>
+          <a href="#" id="btnRestoreTop" class="nav-link quick d-none" role="button" title="Restore" aria-label="Restore"><i class="ri-arrow-go-back-line" aria-hidden="true"></i></a>
           <a href="#" id="btnDelTop" class="nav-link quick nav-danger" role="button" title="Delete" aria-label="Delete"><i class="ri-delete-bin-line" aria-hidden="true"></i></a>
           <div class="dropdown">
             <a href="#" id="btnMore" class="nav-link" data-bs-toggle="dropdown" aria-expanded="false" title="More" aria-label="More actions"><i class="ri-more-2-fill"></i></a>
             <div class="dropdown-menu dropdown-menu-end">
+              <a id="mnRestore" href="#" class="dropdown-item d-none"><i class="ri-arrow-go-back-line"></i> Restore</a>
               <a id="btnPdf" href="#" class="dropdown-item"><i class="ri-file-pdf-line"></i> Save as PDF</a>
               <a id="mnPrint" href="#" class="dropdown-item"><i class="ri-printer-line"></i> Print</a>
               <a id="mnShare" href="#" class="dropdown-item"><i class="ri-share-line"></i> Share</a>
@@ -148,13 +157,26 @@
         </div>
         <div class="compose-body">
           <div class="form-group"><select id="cFrom" class="form-select" aria-label="From"></select></div>
-          <div class="form-group"><input id="cTo" type="text" class="form-control" placeholder="To (separate several with commas)" autocomplete="off" aria-label="To"></div>
+          <div class="form-group has-toggle"><div id="cTo" class="pill-box" data-label="To"></div><button id="cCcToggle" type="button" class="pill-toggle">Cc Bcc</button></div>
+          <div class="form-group d-none" id="cCcRow"><div id="cCc" class="pill-box" data-label="Cc"></div></div>
+          <div class="form-group d-none" id="cBccRow"><div id="cBcc" class="pill-box" data-label="Bcc"></div></div>
           <div class="form-group"><input id="cSubject" type="text" class="form-control" placeholder="Subject" autocomplete="off" aria-label="Subject"></div>
           <div class="form-group"><textarea id="cBody" class="form-control" rows="10" aria-label="Message"></textarea></div>
+          <div id="cTpl" class="tpl-bar d-none" role="group" aria-label="Template">
+            <span>Add a template?</span>
+            <select id="cTplSel" class="form-select form-select-sm" aria-label="Template"></select>
+            <button id="cTplAdd" type="button" class="btn btn-sm btn-primary">Add</button>
+            <button id="cTplSkip" type="button" class="btn btn-sm btn-white">No thanks</button>
+          </div>
+          <div id="cTplOn" class="tpl-on d-none">
+            <div class="tpl-head"><span>Template: <strong id="cTplName"></strong></span><button id="cTplRemove" type="button" aria-label="Remove template"><i class="ri-close-line" aria-hidden="true"></i></button></div>
+            <div id="cTplPreview" class="tpl-preview"></div>
+          </div>
         </div>
         <div class="compose-footer">
           <button id="cSend" type="button" class="btn btn-primary btn-icontext"><i class="ri-send-plane-fill me-2"></i> Send</button>
           <label class="ms-3 small d-flex align-items-center gap-1 mb-0"><input id="cHtml" type="checkbox"> Send as HTML</label>
+          <span id="cDraftState" class="draft-state" role="status" aria-live="polite"></span>
           <button id="cDiscard" type="button" class="btn btn-white btn-icon ms-auto" title="Discard" aria-label="Discard draft"><i class="ri-delete-bin-line"></i></button>
         </div>
       </div>
@@ -169,6 +191,31 @@
     <script src="lib/perfect-scrollbar/perfect-scrollbar.min.js"></script>
     <script src="vendor/purify.min.js"></script>
     <script type="module" src="assets/js/app.js"></script>
+    <div class="modal fade" id="tplModal" tabindex="-1" aria-labelledby="tplTitle" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header"><h5 class="modal-title" id="tplTitle">Templates</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+          <div class="modal-body">
+            <p class="small text-muted">A template is an HTML block (signature, footer, card) added to the end of a message. When you start a mail you are asked whether to add it.</p>
+            <label class="form-label" for="tplPick">Template</label>
+            <select id="tplPick" class="form-select mb-3"></select>
+            <label class="form-label" for="tplName">Name</label>
+            <input id="tplName" class="form-control mb-3" maxlength="80" autocomplete="off">
+            <label class="form-label" for="tplHtml">HTML</label>
+            <textarea id="tplHtml" class="form-control mb-2" rows="9" spellcheck="false" style="font-family:monospace;font-size:13px"></textarea>
+            <button id="tplExample" type="button" class="btn btn-sm btn-white mb-3">Insert example</button>
+            <label class="form-check mb-3"><input id="tplDefault" class="form-check-input" type="checkbox"> <span class="form-check-label">Offer this one first</span></label>
+            <div class="small text-muted mb-1">Preview</div>
+            <div id="tplPreview" class="tpl-preview"></div>
+          </div>
+          <div class="modal-footer">
+            <button id="tplDelete" type="button" class="btn btn-white text-danger me-auto d-none">Delete</button>
+            <button type="button" class="btn btn-white" data-bs-dismiss="modal">Close</button>
+            <button id="tplSave" type="button" class="btn btn-primary">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered modal-sm">
         <div class="modal-content">
