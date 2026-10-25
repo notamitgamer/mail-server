@@ -150,11 +150,42 @@ const archiveEmail = async ({ emailId, from, to, subject, receivedAt, parsed, fe
 // ---- Push delivery ----------------------------------------------------------
 const pushHash = (endpoint) => crypto.createHash('sha256').update(endpoint).digest('hex');
 
+// ---- FCM delivery (the Android app) -------------------------------------------
+// Phones running the Android app register an FCM token. A notification message (not data-only) is used so
+// Android shows it itself while the app is closed; tapping it hands `id` and `t` to the app.
+const fcmHash = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const fcmToAll = async (payload) => {
+  try {
+    const docs = (await db.collection('fcmTokens').get()).docs;
+    if (!docs.length) return 0;
+    const data = {};
+    if (payload.id) data.id = String(payload.id);
+    if (payload.t) data.t = String(payload.t);
+    const res = await admin.messaging().sendEachForMulticast({
+      tokens: docs.map((d) => d.data().token),
+      notification: { title: payload.title || 'New mail', body: payload.body || '' },
+      data,
+      android: { priority: 'high', ttl: PUSH_TTL * 1000, notification: payload.id ? { tag: 'mail-' + payload.id } : {} },
+    });
+    await Promise.all(res.responses.map(async (r, i) => {
+      const code = r.error && r.error.code;
+      if (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token') {
+        await docs[i].ref.delete().catch(() => {}); // app was uninstalled
+      } else if (r.error) console.error('FCM failed:', code);
+    }));
+    return res.successCount;
+  } catch (err) {
+    console.error('FCM error:', err.message);
+    return 0;
+  }
+};
+
 // Send one payload to every saved device. Never throws: a push problem must not make
 // the webhook answer 500, because Resend would retry and the mail would be pushed twice.
 const pushToAll = async (payload) => {
-  if (!db || !pushEnabled) return 0;
-  let sent = 0;
+  if (!db) return 0;
+  let sent = await fcmToAll(payload); // the Android app
+  if (!pushEnabled) return sent;
   try {
     const subs = await db.collection('pushSubs').get();
     const body = JSON.stringify(payload);
@@ -719,9 +750,16 @@ app.post('/api/push/unsubscribe', requireOwner, express.json({ limit: '10kb' }),
   return res.json({ ok: true });
 }));
 
+// Android app: save this phone's FCM token (one document per token).
+app.post('/api/push/fcm', requireOwner, express.json({ limit: '10kb' }), handle(async (req, res) => {
+  const token = req.body && req.body.token;
+  if (typeof token !== 'string' || token.length < 20 || token.length > 4096) return res.status(400).json({ error: 'Bad token' });
+  await db.collection('fcmTokens').doc(fcmHash(token)).set({ token, updatedAt: admin.firestore.Timestamp.now() });
+  return res.json({ ok: true });
+}));
+
 // Sends a test notification to every saved device.
 app.post('/api/push/test', requireOwner, handle(async (req, res) => {
-  if (!pushEnabled) return res.status(503).json({ error: 'Push is not configured (VAPID keys missing)' });
   const sent = await pushToAll({ title: 'Notifications are on', body: 'You will be notified when new mail arrives.', id: null });
   return res.json({ ok: true, sent });
 }));

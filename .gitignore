@@ -12,3 +12,9 @@ node_modules/
 # Logs and OS files
 npm-debug.log*
 .DS_Store
+
+# Android app build output and signing
+android-app/android/
+*.jks
+*.keystore
+google-services.json
