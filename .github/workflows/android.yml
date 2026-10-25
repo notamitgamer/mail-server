@@ -38,36 +38,15 @@ jobs:
           done
           npm ci --no-audit --no-fund
           npx cap add android
-          # 120 Hz and matching status/navigation bar colour: needs minSdk 23 and a small MainActivity.
+          # Native bits: 120 Hz, bar colours, animated splash, FCM notifications with buttons, mailto/share, haptics.
           sed -i 's/minSdkVersion = 22/minSdkVersion = 23/' android/variables.gradle
-          cat > android/app/src/main/java/dev/amit/mail/MainActivity.java <<'JAVA'
-          package dev.amit.mail;
-
-          import android.os.Bundle;
-          import android.view.Display;
-          import android.view.WindowManager;
-          import com.getcapacitor.BridgeActivity;
-
-          public class MainActivity extends BridgeActivity {
-            @Override
-            public void onCreate(Bundle savedInstanceState) {
-              super.onCreate(savedInstanceState);
-              getWindow().setStatusBarColor(0xFF141316);
-              getWindow().setNavigationBarColor(0xFF141316);
-              Display display = getWindowManager().getDefaultDisplay();
-              Display.Mode cur = display.getMode();
-              Display.Mode best = cur;
-              for (Display.Mode m : display.getSupportedModes()) {
-                if (m.getPhysicalWidth() == cur.getPhysicalWidth() && m.getPhysicalHeight() == cur.getPhysicalHeight()
-                    && m.getRefreshRate() > best.getRefreshRate()) best = m;
-              }
-              WindowManager.LayoutParams lp = getWindow().getAttributes();
-              lp.preferredDisplayModeId = best.getModeId();
-              lp.preferredRefreshRate = best.getRefreshRate();
-              getWindow().setAttributes(lp);
-            }
-          }
-          JAVA
+          src=android/app/src/main
+          cp native/*.java "$src/java/dev/amit/mail/"
+          cp -r native/res/. "$src/res/"
+          python3 patch_manifest.py "$src/AndroidManifest.xml"
+          # Launch background in the app colour instead of white.
+          printf '<?xml version="1.0" encoding="utf-8"?><resources><color name="mail_bg">#FF141316</color></resources>' > "$src/res/values/mail_colors.xml"
+          sed -i 's#@drawable/splash#@color/mail_bg#' "$src/res/values/styles.xml"
           # Package Google Play's sign-in library with the Firebase auth plugin (without it the app crashes at launch).
           sed -i 's/^ext {/ext {\n    rgcfaIncludeGoogle = true/' android/variables.gradle
           grep -q rgcfaIncludeGoogle android/variables.gradle
