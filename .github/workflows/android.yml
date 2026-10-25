@@ -38,6 +38,9 @@ jobs:
           done
           npm ci --no-audit --no-fund
           npx cap add android
+          # Package Google Play's sign-in library with the Firebase auth plugin (without it the app crashes at launch).
+          sed -i 's/^ext {/ext {\n    rgcfaIncludeGoogle = true/' android/variables.gradle
+          grep -q rgcfaIncludeGoogle android/variables.gradle
           # GOOGLE_SERVICES_JSON may be the raw JSON or its base64.
           if [ "$(printf '%s' "$GOOGLE_SERVICES_JSON" | tr -d '[:space:]' | head -c1)" = "{" ]; then
             printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
