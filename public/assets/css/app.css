@@ -534,3 +534,12 @@ input[type="checkbox"] { accent-color: var(--peach); }
     width: 100% !important;
   }
 }
+
+/* Smoother mail view on phones: slide with transform (GPU) instead of animating left/width (layout every frame). */
+html { touch-action: manipulation; }
+@media (max-width: 767.98px) {
+  .mailbox { will-change: transform; transition: transform .28s cubic-bezier(.2, 0, 0, 1); }
+  .mailcontent { left: 0; transform: translateX(100%); will-change: transform; transition: transform .28s cubic-bezier(.2, 0, 0, 1); contain: layout paint; }
+  .mailcontent-show .mailcontent { left: 0; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .mailbox, .mailcontent { transition: none !important; } }
