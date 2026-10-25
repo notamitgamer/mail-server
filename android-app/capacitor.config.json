@@ -1,0 +1,13 @@
+{
+  "appId": "dev.amit.mail",
+  "appName": "Mailbox",
+  "webDir": "www",
+  "server": {
+    "url": "https://mail.amit.is-a.dev",
+    "cleartext": false
+  },
+  "plugins": {
+    "PushNotifications": { "presentationOptions": [] },
+    "FirebaseAuthentication": { "skipNativeAuth": true, "providers": ["google.com"] }
+  }
+}

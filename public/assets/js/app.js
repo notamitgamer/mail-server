@@ -4,6 +4,8 @@ const FIREBASE_VER = '11.10.0';
 
 const state = { folder: 'inbox', mails: [], hasMore: false, loading: false, shown: 30, openId: null, openMail: null, unread: 0, filter: 'all' };
 let config = { aliases: [], fromName: '' };
+const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); // the Android app
+const cap = (name) => window.Capacitor.Plugins[name] || window.Capacitor.registerPlugin(name);
 let getToken = async () => { throw new Error('Not signed in'); };
 let signOutFn = async () => {};
 
@@ -229,8 +231,13 @@ function initAuth() {
     const [{ initializeApp }, fa] = await Promise.all([import(`${base}/firebase-app.js`), import(`${base}/firebase-auth.js`)]);
     const auth = fa.getAuth(initializeApp(config.firebase));
     getToken = () => auth.currentUser.getIdToken();
-    signOutFn = () => fa.signOut(auth);
-    $('#btnSignin').off('click').on('click', () => fa.signInWithPopup(auth, new fa.GoogleAuthProvider()).catch((e) => showSignin('Sign-in failed: ' + e.message, true)));
+    signOutFn = () => fa.signOut(auth).then(() => isNative() && cap('FirebaseAuthentication').signOut().catch(() => {}));
+    $('#btnSignin').off('click').on('click', () => { // Google blocks sign-in popups inside an app's WebView, so the Android app signs in natively
+      const go = isNative()
+        ? cap('FirebaseAuthentication').signInWithGoogle({ skipNativeAuth: true }).then((r) => fa.signInWithCredential(auth, fa.GoogleAuthProvider.credential(r.credential.idToken)))
+        : fa.signInWithPopup(auth, new fa.GoogleAuthProvider());
+      go.catch((e) => showSignin('Sign-in failed: ' + e.message, true));
+    });
     fa.onAuthStateChanged(auth, (user) => {
       authUser = user;
       if (user) start(user);
@@ -1013,8 +1020,32 @@ async function activatePush() { // permission is granted: make sure there is a l
   await savePushSub(active);
 }
 
+// Android app: notifications come from FCM instead of Web Push.
+let nativeRegistered = false;
+async function initNativePush() {
+  const P = cap('PushNotifications');
+  $('#btnNotify').removeClass('d-none');
+  const p = await P.checkPermissions();
+  if (p.receive !== 'granted') { bellState(false); return showGate(p.receive === 'denied' ? 'blocked' : 'ask'); }
+  hideGate();
+  if (!nativeRegistered) { nativeRegistered = true; await P.register(); } // the 'registration' event below sends the token to the server
+  bellState(true);
+}
+if (isNative()) {
+  const P = cap('PushNotifications');
+  P.addListener('registration', (t) => api('/api/push/fcm', { method: 'POST', body: JSON.stringify({ token: t.value }) }).catch(() => { nativeRegistered = false; }));
+  P.addListener('pushNotificationReceived', () => { if (authUser) syncAll(); }); // app is on screen: just refresh
+  P.addListener('pushNotificationActionPerformed', (a) => { // notification tapped
+    const d = (a.notification && a.notification.data) || {};
+    if (!d.id) return;
+    if (appReady) openInboxMail(d.id, { token: d.t });
+    else history.replaceState(null, '', '/?mail=' + encodeURIComponent(d.id) + (d.t ? '&t=' + encodeURIComponent(d.t) : '')); // cold start: start() opens it
+  });
+}
+
 let pushBusy = false;
 async function initPush() { // after sign-in and every time the app comes back to the front: keep notifications on
+  if (isNative()) return initNativePush().catch((e) => toast('Could not set up notifications: ' + e.message));
   if (pushBusy || !pushSupported() || !config || !config.vapidPublicKey) return; // not supported here (e.g. an iPhone browser tab) or the server has push off
   pushBusy = true;
   try {
@@ -1033,6 +1064,14 @@ async function initPush() { // after sign-in and every time the app comes back t
 $('#ngAllow').on('click', async () => {
   const $b = $('#ngAllow').prop('disabled', true);
   try {
+    if (isNative()) {
+      const r = await cap('PushNotifications').requestPermissions();
+      if (r.receive === 'denied') return showGate('blocked');
+      if (r.receive !== 'granted') return showGate('ask', 'Tap Allow in the prompt to continue.');
+      await initNativePush();
+      api('/api/push/test', { method: 'POST' }).catch(() => {});
+      return;
+    }
     if (Notification.permission !== 'granted') await Notification.requestPermission();
     if (Notification.permission === 'denied') return showGate('blocked');
     if (Notification.permission !== 'granted') return showGate('ask', 'Tap Allow in the prompt to continue.');

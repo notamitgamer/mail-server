@@ -1,0 +1,15 @@
+{
+  "name": "mail-server-android",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Android app shell for mail-server (Capacitor, FCM push, native Google sign-in)",
+  "license": "MIT",
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/push-notifications": "^6.0.0",
+    "@capacitor-firebase/authentication": "^6.3.0",
+    "firebase": "^10.14.0"
+  }
+}
