@@ -15,6 +15,11 @@
       .demo-note { margin: 0 0 6px; font-size: 12px; line-height: 1.5; color: var(--subtext0); }
       .demo-note a { color: var(--peach); }
       .demo-badge { margin-left: 8px; padding: 1px 8px; border-radius: 10px; background: var(--surface0); color: var(--peach); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
+      .demo-pop { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .72); }
+      .demo-pop[hidden] { display: none; }
+      .demo-pop-card { max-width: 380px; padding: 24px; border: 1px solid var(--surface1); border-radius: 14px; background: var(--mantle); color: var(--subtext1); }
+      .demo-pop-card h5 { margin: 0 0 10px; color: var(--text); }
+      .demo-pop-card p { margin: 0 0 18px; font-size: 14px; line-height: 1.6; }
     </style>
   </head>
   <body>
@@ -104,6 +109,13 @@
 
     <div class="backdrop"></div>
     <div id="toast" class="toast-msg" role="status" aria-live="polite"></div>
+    <div id="demoPop" class="demo-pop" role="dialog" aria-modal="true" aria-labelledby="demoPopTitle">
+      <div class="demo-pop-card">
+        <h5 id="demoPopTitle">This is only a demo</h5>
+        <p>It is not an exact copy of the real app, and I haven't kept it up to date. Some things may look or behave differently. All mail here is made up.</p>
+        <button id="demoPopOk" type="button" class="btn btn-primary">Got it</button>
+      </div>
+    </div>
 
     <script>
       (function () {
@@ -214,7 +226,7 @@
         }
 
         // ---- reader ----
-        var FRAME_CSS = '<style>html,body{margin:0}body{padding:4px 2px;font:15px/1.65 -apple-system,"Segoe UI",Roboto,sans-serif;color:#cdd6f4;background:transparent;word-wrap:break-word}a{color:#89b4fa}h3{margin:0 0 .6em}p{margin:0 0 1em}ul{margin:0 0 1em;padding-left:1.3em}</style>';
+        var FRAME_CSS = '<style>html{color-scheme:dark}html,body{margin:0}body{padding:4px 2px;font:15px/1.65 -apple-system,"Segoe UI",Roboto,sans-serif;color:#cdd6f4;background:transparent;word-wrap:break-word}a{color:#89b4fa}h3{margin:0 0 .6em}p{margin:0 0 1em}ul{margin:0 0 1em;padding-left:1.3em}</style>';
         function openMail(id) {
           var m = MAILS[state.folder].filter(function (x) { return x.id === id; })[0];
           if (!m) return;
@@ -281,7 +293,7 @@
         });
 
         renderList();
-        toast('Demo: made-up mail, nothing is saved or sent');
+        $('#demoPopOk').addEventListener('click', function () { $('#demoPop').hidden = true; });
       })();
     </script>
   </body>
