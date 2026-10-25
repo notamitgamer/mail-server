@@ -38,8 +38,15 @@ jobs:
           done
           npm ci --no-audit --no-fund
           npx cap add android
-          echo "$GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          # GOOGLE_SERVICES_JSON may be the raw JSON or its base64.
+          if [ "$(printf '%s' "$GOOGLE_SERVICES_JSON" | tr -d '[:space:]' | head -c1)" = "{" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          else
+            printf '%s' "$GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json \
+              || { echo "::error::GOOGLE_SERVICES_JSON is neither JSON nor valid base64"; exit 1; }
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks" \
+            || { echo "::error::KEYSTORE_BASE64 is not valid base64 (paste the whole contents of KEYSTORE_BASE64.txt)"; exit 1; }
 
           # App icon: reuse the web app's icon instead of the Capacitor default.
           res=android/app/src/main/res
