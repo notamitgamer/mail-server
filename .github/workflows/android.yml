@@ -69,6 +69,8 @@ jobs:
           done
 
           sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          # MailMessagingService extends FirebaseMessagingService, but the push plugin keeps firebase-messaging private; add it to the app too (same version as the plugin).
+          printf '\ndependencies {\n    implementation "com.google.firebase:firebase-messaging:23.3.1"\n}\n' >> android/app/build.gradle
           npx cap sync android
           cd android
           ./gradlew assembleRelease --no-daemon \
