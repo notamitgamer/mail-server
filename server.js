@@ -158,14 +158,13 @@ const fcmToAll = async (payload) => {
   try {
     const docs = (await db.collection('fcmTokens').get()).docs;
     if (!docs.length) return 0;
-    const data = {};
+    const data = { title: String(payload.title || 'New mail'), body: String(payload.body || '') };
     if (payload.id) data.id = String(payload.id);
     if (payload.t) data.t = String(payload.t);
     const res = await admin.messaging().sendEachForMulticast({
       tokens: docs.map((d) => d.data().token),
-      notification: { title: payload.title || 'New mail', body: payload.body || '' },
-      data,
-      android: { priority: 'high', ttl: PUSH_TTL * 1000, notification: payload.id ? { tag: 'mail-' + payload.id } : {} },
+      data, // data-only: the app builds the notification itself (Mark read / Delete / Reply buttons)
+      android: { priority: 'high', ttl: PUSH_TTL * 1000 },
     });
     await Promise.all(res.responses.map(async (r, i) => {
       const code = r.error && r.error.code;
@@ -756,6 +755,28 @@ app.post('/api/push/fcm', requireOwner, express.json({ limit: '10kb' }), handle(
   if (typeof token !== 'string' || token.length < 20 || token.length > 4096) return res.status(400).json({ error: 'Bad token' });
   await db.collection('fcmTokens').doc(fcmHash(token)).set({ token, updatedAt: admin.firestore.Timestamp.now() });
   return res.json({ ok: true });
+}));
+
+// Notification buttons in the Android app: Mark read / Delete one mail with the push token (no sign-in; the token is bound to the mail id).
+app.post('/api/push/action', express.json({ limit: '2kb' }), handle(async (req, res) => {
+  const { id, t, op } = req.body || {};
+  if (typeof id !== 'string' || !ID_RE.test(id) || !checkMailToken(id, t)) return res.status(403).json({ error: 'Bad token' });
+  if (op === 'read') {
+    await db.collection('mails').doc(id).update({ read: true }).catch((err) => { if (err.code !== 5) throw err; });
+    return res.json({ ok: true });
+  }
+  if (op === 'delete') {
+    const ref = db.collection('mails').doc(id);
+    const snap = await ref.get();
+    if (snap.exists) {
+      const batch = db.batch();
+      batch.set(db.collection('trash').doc(snap.id), { ...snap.data(), origin: 'inbox', deletedAt: admin.firestore.Timestamp.now() });
+      batch.delete(ref);
+      await batch.commit();
+    }
+    return res.json({ ok: true });
+  }
+  return res.status(400).json({ error: 'Bad op' });
 }));
 
 // Sends a test notification to every saved device.
