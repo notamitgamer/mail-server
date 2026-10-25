@@ -13,6 +13,74 @@
     <link href="lib/remixicon/fonts/remixicon.css" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.min.css">
     <link rel="stylesheet" href="assets/css/app.css">
+    <style>
+      /* Keep top appbar solidly opaque and above scrolling cards */
+      .mailbox-header {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 100 !important;
+        background-color: #141316 !important;
+      }
+
+      /* Date dividers stick cleanly below the header */
+      .mail-group-divider,
+      .mail-group-label,
+      .mail-group-title,
+      .mail-group > li.mail-group-header {
+        position: sticky;
+        top: 60px;
+        z-index: 20;
+        background-color: #141316;
+      }
+
+      /* Base container for every mail row */
+      .mail-group > li,
+      .mail-item {
+        position: relative !important;
+        overflow: hidden !important;
+        background-color: #141316 !important;
+      }
+
+      /* Background delete reveal layer */
+      .mail-item-actions,
+      .mail-action-bg,
+      .mail-swipe-action {
+        position: absolute !important;
+        inset: 0 !important;
+        z-index: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        background-color: #ba1a1a !important;
+        color: #ffffff !important;
+        padding-right: 1.25rem !important;
+      }
+
+      /* Foreground card */
+      .mail-item-inner,
+      .mail-group > li > a,
+      .mail-item > a {
+        position: relative !important;
+        z-index: 1 !important;
+        background-color: #141316 !important;
+        color: #e5e1e6 !important;
+      }
+
+      /* Contrast overrides if a row is tinted during swipe/delete actions */
+      .mail-group > li.deleting,
+      .mail-item.deleting,
+      .mail-item.is-deleted,
+      .mail-group > li[style*="background"] {
+        color: #141316 !important;
+      }
+
+      .mail-group > li.deleting h6,
+      .mail-group > li.deleting p,
+      .mail-group > li.deleting small,
+      .mail-group > li.deleting span {
+        color: #1b1b1f !important;
+      }
+    </style>
   </head>
   <body>
 
@@ -25,12 +93,21 @@
         <p id="ngNote" class="signin-note" role="status"></p>
       </div>
     </div>
+
     <div id="signin" class="signin">
       <div>
         <img class="signin-logo" src="/icons/icon-192.png" alt="" width="72" height="72">
         <h3><strong>Mail</strong>box</h3>
         <p id="signinMsg" class="text-muted">Loading&hellip;</p>
-        <button id="btnSignin" type="button" class="btn-google d-none"><svg class="g-logo" viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg><span>Sign in with Google</span></button>
+        <button id="btnSignin" type="button" class="btn-google d-none">
+          <svg class="g-logo" viewBox="0 0 48 48" width="20" height="20" aria-hidden="true">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+          </svg>
+          <span>Sign in with Google</span>
+        </button>
         <div class="signin-note">
           <p><strong>Private mailbox.</strong><br>Only the owner is allowed to sign in, so you can&rsquo;t get in. You can try, but other accounts will be turned away.</p>
           <p>Page not loading or sign-in stuck? Open <a href="/ping" target="_blank" rel="noopener">/ping</a> to check whether the server is awake. It should say &ldquo;Server is awake!&rdquo; (it can take up to a minute to wake up).</p>
@@ -50,14 +127,34 @@
       <div class="sidebar-body">
         <label class="sidebar-label">Mailboxes</label>
         <nav class="nav flex-column mb-4" id="folders" aria-label="Mailboxes">
-          <a href="#" class="nav-link active" data-folder="inbox"><i class="ri-inbox-line"></i> <span>Inbox</span> <small id="unreadCount"></small><small id="totalInbox" class="total"></small></a>
-          <a href="#" class="nav-link" data-folder="sent"><i class="ri-send-plane-2-line"></i> <span>Sent</span> <small id="totalSent" class="total"></small></a>
-          <a href="#" class="nav-link" data-folder="drafts"><i class="ri-draft-line"></i> <span>Drafts</span> <small id="totalDrafts" class="total"></small></a>
-          <a href="#" class="nav-link" data-folder="trash"><i class="ri-delete-bin-line"></i> <span>Bin</span> <small id="totalTrash" class="total"></small></a>
+          <a href="#" class="nav-link active" data-folder="inbox">
+            <i class="ri-inbox-line"></i>
+            <span>Inbox</span>
+            <small id="unreadCount"></small>
+            <small id="totalInbox" class="total"></small>
+          </a>
+          <a href="#" class="nav-link" data-folder="sent">
+            <i class="ri-send-plane-2-line"></i>
+            <span>Sent</span>
+            <small id="totalSent" class="total"></small>
+          </a>
+          <a href="#" class="nav-link" data-folder="drafts">
+            <i class="ri-draft-line"></i>
+            <span>Drafts</span>
+            <small id="totalDrafts" class="total"></small>
+          </a>
+          <a href="#" class="nav-link" data-folder="trash">
+            <i class="ri-delete-bin-line"></i>
+            <span>Bin</span>
+            <small id="totalTrash" class="total"></small>
+          </a>
         </nav>
         <label class="sidebar-label">Compose</label>
         <nav class="nav flex-column mb-5" aria-label="Compose tools">
-          <a href="#" id="navTemplates" class="nav-link"><i class="ri-layout-top-line"></i> <span>Templates</span></a>
+          <a href="#" id="navTemplates" class="nav-link">
+            <i class="ri-layout-top-line"></i>
+            <span>Templates</span>
+          </a>
         </nav>
       </div>
       <div id="buildInfo" class="sidebar-footer" aria-live="polite">
@@ -70,8 +167,13 @@
 
     <div class="mailbox">
       <div class="mailbox-header">
-        <a href="#" class="mailbox-menu" role="button" aria-label="Open menu"><i class="ri-menu-2-fill" aria-hidden="true"></i></a>
-        <div class="appbar-titles"><strong id="folderTitle" class="appbar-title">Inbox</strong><small id="countText" role="status"></small></div>
+        <a href="#" class="mailbox-menu" role="button" aria-label="Open menu">
+          <i class="ri-menu-2-fill" aria-hidden="true"></i>
+        </a>
+        <div class="appbar-titles">
+          <strong id="folderTitle" class="appbar-title">Inbox</strong>
+          <small id="countText" role="status"></small>
+        </div>
         <div class="mailbox-search">
           <i class="ri-search-line"></i>
           <input id="search" type="search" class="form-control" placeholder="Search mail" aria-label="Search loaded mail">
@@ -86,9 +188,16 @@
         </div>
       </div>
 
-      <div id="filterChip" class="filter-chip d-none"><span>Unread only</span><button type="button" aria-label="Show all mail"><i class="ri-close-line" aria-hidden="true"></i></button></div>
+      <div id="filterChip" class="filter-chip d-none">
+        <span>Unread only</span>
+        <button type="button" aria-label="Show all mail">
+          <i class="ri-close-line" aria-hidden="true"></i>
+        </button>
+      </div>
 
-      <div id="ptr" class="ptr" aria-hidden="true"><i class="ri-refresh-line"></i></div>
+      <div id="ptr" class="ptr" aria-hidden="true">
+        <i class="ri-refresh-line"></i>
+      </div>
       <ul id="mailGroup" class="mail-group" aria-label="Messages" aria-busy="false"></ul>
     </div>
 
@@ -141,7 +250,9 @@
       </div>
     </div>
 
-    <a href="#" class="menu-compose" role="button" title="New message" aria-label="New message"><i class="ri-pencil-line" aria-hidden="true"></i></a>
+    <a href="#" class="menu-compose" role="button" title="New message" aria-label="New message">
+      <i class="ri-pencil-line" aria-hidden="true"></i>
+    </a>
 
     <div class="compose d-none" role="dialog" aria-label="Compose message">
       <div class="compose-content">
@@ -157,12 +268,25 @@
           </nav>
         </div>
         <div class="compose-body">
-          <div class="form-group"><select id="cFrom" class="form-select" aria-label="From"></select></div>
-          <div class="form-group has-toggle"><div id="cTo" class="pill-box" data-label="To"></div><button id="cCcToggle" type="button" class="pill-toggle">Cc Bcc</button></div>
-          <div class="form-group d-none" id="cCcRow"><div id="cCc" class="pill-box" data-label="Cc"></div></div>
-          <div class="form-group d-none" id="cBccRow"><div id="cBcc" class="pill-box" data-label="Bcc"></div></div>
-          <div class="form-group"><input id="cSubject" type="text" class="form-control" placeholder="Subject" autocomplete="off" aria-label="Subject"></div>
-          <div class="form-group"><textarea id="cBody" class="form-control" rows="10" aria-label="Message"></textarea></div>
+          <div class="form-group">
+            <select id="cFrom" class="form-select" aria-label="From"></select>
+          </div>
+          <div class="form-group has-toggle">
+            <div id="cTo" class="pill-box" data-label="To"></div>
+            <button id="cCcToggle" type="button" class="pill-toggle">Cc Bcc</button>
+          </div>
+          <div class="form-group d-none" id="cCcRow">
+            <div id="cCc" class="pill-box" data-label="Cc"></div>
+          </div>
+          <div class="form-group d-none" id="cBccRow">
+            <div id="cBcc" class="pill-box" data-label="Bcc"></div>
+          </div>
+          <div class="form-group">
+            <input id="cSubject" type="text" class="form-control" placeholder="Subject" autocomplete="off" aria-label="Subject">
+          </div>
+          <div class="form-group">
+            <textarea id="cBody" class="form-control" rows="10" aria-label="Message"></textarea>
+          </div>
           <div id="cTpl" class="tpl-bar d-none" role="group" aria-label="Template">
             <span>Add a template?</span>
             <select id="cTplSel" class="form-select form-select-sm" aria-label="Template"></select>
@@ -170,15 +294,24 @@
             <button id="cTplSkip" type="button" class="btn btn-sm btn-white">No thanks</button>
           </div>
           <div id="cTplOn" class="tpl-on d-none">
-            <div class="tpl-head"><span>Template: <strong id="cTplName"></strong></span><button id="cTplRemove" type="button" aria-label="Remove template"><i class="ri-close-line" aria-hidden="true"></i></button></div>
+            <div class="tpl-head">
+              <span>Template: <strong id="cTplName"></strong></span>
+              <button id="cTplRemove" type="button" aria-label="Remove template"><i class="ri-close-line" aria-hidden="true"></i></button>
+            </div>
             <div id="cTplPreview" class="tpl-preview"></div>
           </div>
         </div>
         <div class="compose-footer">
-          <button id="cSend" type="button" class="btn btn-primary btn-icontext"><i class="ri-send-plane-fill me-2"></i> Send</button>
-          <label class="ms-3 small d-flex align-items-center gap-1 mb-0"><input id="cHtml" type="checkbox"> Send as HTML</label>
+          <button id="cSend" type="button" class="btn btn-primary btn-icontext">
+            <i class="ri-send-plane-fill me-2"></i> Send
+          </button>
+          <label class="ms-3 small d-flex align-items-center gap-1 mb-0">
+            <input id="cHtml" type="checkbox"> Send as HTML
+          </label>
           <span id="cDraftState" class="draft-state" role="status" aria-live="polite"></span>
-          <button id="cDiscard" type="button" class="btn btn-white btn-icon ms-auto" title="Discard" aria-label="Discard draft"><i class="ri-delete-bin-line"></i></button>
+          <button id="cDiscard" type="button" class="btn btn-white btn-icon ms-auto" title="Discard" aria-label="Discard draft">
+            <i class="ri-delete-bin-line"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -192,10 +325,14 @@
     <script src="lib/perfect-scrollbar/perfect-scrollbar.min.js"></script>
     <script src="vendor/purify.min.js"></script>
     <script type="module" src="assets/js/app.js"></script>
+
     <div class="modal fade" id="tplModal" tabindex="-1" aria-labelledby="tplTitle" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
         <div class="modal-content">
-          <div class="modal-header"><h5 class="modal-title" id="tplTitle">Templates</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+          <div class="modal-header">
+            <h5 class="modal-title" id="tplTitle">Templates</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
           <div class="modal-body">
             <p class="small text-muted">A template is an HTML block (signature, footer, card) added to the end of a message. When you start a mail you are asked whether to add it.</p>
             <label class="form-label" for="tplPick">Template</label>
@@ -205,7 +342,10 @@
             <label class="form-label" for="tplHtml">HTML</label>
             <textarea id="tplHtml" class="form-control mb-2" rows="9" spellcheck="false" style="font-family:monospace;font-size:13px"></textarea>
             <button id="tplExample" type="button" class="btn btn-sm btn-white mb-3">Insert example</button>
-            <label class="form-check mb-3"><input id="tplDefault" class="form-check-input" type="checkbox"> <span class="form-check-label">Offer this one first</span></label>
+            <label class="form-check mb-3">
+              <input id="tplDefault" class="form-check-input" type="checkbox">
+              <span class="form-check-label">Offer this one first</span>
+            </label>
             <div class="small text-muted mb-1">Preview</div>
             <div id="tplPreview" class="tpl-preview"></div>
           </div>
@@ -217,6 +357,7 @@
         </div>
       </div>
     </div>
+
     <div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered modal-sm">
         <div class="modal-content">
@@ -224,7 +365,9 @@
             <h5 class="modal-title" id="confirmTitle"></h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
-          <div class="modal-body"><p class="mb-0" id="confirmMsg"></p></div>
+          <div class="modal-body">
+            <p class="mb-0" id="confirmMsg"></p>
+          </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             <button type="button" id="confirmOk" class="btn btn-primary">OK</button>
@@ -232,6 +375,7 @@
         </div>
       </div>
     </div>
+
     <div class="modal fade" id="fwdModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -260,5 +404,6 @@
         </div>
       </div>
     </div>
+
   </body>
 </html>
