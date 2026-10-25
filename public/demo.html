@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover">
+    <meta name="theme-color" content="#141316">
+    <title>Demo - Mail</title>
+    <link rel="icon" href="/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <link rel="preload" href="/assets/fonts/lexend-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link href="/lib/remixicon/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/css/style.min.css">
+    <link rel="stylesheet" href="/assets/css/app.css">
+    <style>
+      .demo-note { margin: 0 0 6px; font-size: 12px; line-height: 1.5; color: var(--subtext0); }
+      .demo-note a { color: var(--peach); }
+      .demo-badge { margin-left: 8px; padding: 1px 8px; border-radius: 10px; background: var(--surface0); color: var(--peach); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
+      .demo-pop { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .72); }
+      .demo-pop[hidden] { display: none; }
+      .demo-pop-card { max-width: 380px; padding: 24px; border: 1px solid var(--surface1); border-radius: 14px; background: var(--mantle); color: var(--subtext1); }
+      .demo-pop-card h5 { margin: 0 0 10px; color: var(--text); }
+      .demo-pop-card p { margin: 0 0 18px; font-size: 14px; line-height: 1.6; }
+    </style>
+  </head>
+  <body>
+    <!-- Static, read-only demo. It loads no app.js, no Firebase and makes no /api calls: every mail below is made up. -->
+
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <a href="/demo" class="sidebar-logo"><strong>Mail</strong>box<span class="demo-badge">Demo</span></a>
+      </div>
+      <div class="sidebar-body">
+        <label class="sidebar-label">Mailboxes</label>
+        <nav class="nav flex-column mb-4" id="folders" aria-label="Mailboxes">
+          <a href="#" class="nav-link active" data-folder="inbox"><i class="ri-inbox-line"></i> <span>Inbox</span> <small id="unreadCount"></small><small id="totalInbox" class="total"></small></a>
+          <a href="#" class="nav-link" data-folder="sent"><i class="ri-send-plane-2-line"></i> <span>Sent</span> <small id="totalSent" class="total"></small></a>
+          <a href="#" class="nav-link" data-folder="drafts"><i class="ri-draft-line"></i> <span>Drafts</span> <small id="totalDrafts" class="total"></small></a>
+          <a href="#" class="nav-link" data-folder="trash"><i class="ri-delete-bin-line"></i> <span>Bin</span> <small id="totalTrash" class="total"></small></a>
+        </nav>
+        <label class="sidebar-label">Compose</label>
+        <nav class="nav flex-column mb-5" aria-label="Compose tools">
+          <a href="#" class="nav-link" data-locked><i class="ri-layout-top-line"></i> <span>Templates</span></a>
+        </nav>
+      </div>
+      <div class="sidebar-footer">
+        <label class="sidebar-label">Demo</label>
+        <p class="demo-note">Made-up mail, nothing is saved or sent.<br><a href="/">Go to the real mailbox</a></p>
+      </div>
+    </div>
+
+    <div class="mailbox">
+      <div class="mailbox-header">
+        <a href="#" class="mailbox-menu" role="button" aria-label="Open menu"><i class="ri-menu-2-fill" aria-hidden="true"></i></a>
+        <div class="appbar-titles"><strong id="folderTitle" class="appbar-title">Inbox</strong><small id="countText" role="status"></small></div>
+        <div class="mailbox-search">
+          <i class="ri-search-line"></i>
+          <input id="search" type="search" class="form-control" placeholder="Search mail" aria-label="Search mail">
+        </div>
+        <div class="appbar-actions">
+          <a href="#" id="btnSearch" role="button" title="Search" aria-label="Search"><i class="ri-search-line" aria-hidden="true"></i></a>
+          <a href="#" id="btnFilter" role="button" title="Show unread only" aria-label="Show unread only" aria-pressed="false"><i class="ri-filter-3-line" aria-hidden="true"></i></a>
+          <a href="/" id="avatar" class="mail-avatar" role="button" title="Leave the demo" aria-label="Leave the demo"><span>m</span></a>
+        </div>
+      </div>
+
+      <div id="filterChip" class="filter-chip d-none"><span>Unread only</span><button type="button" aria-label="Show all mail"><i class="ri-close-line" aria-hidden="true"></i></button></div>
+
+      <ul id="mailGroup" class="mail-group" aria-label="Messages"></ul>
+    </div>
+
+    <div id="mailContent" class="mailcontent">
+      <div class="mailcontent-subject d-none">
+        <nav class="nav">
+          <a id="mailBack" href="#" class="nav-link" role="button" title="Back to list" aria-label="Back to list"><i class="ri-arrow-left-line" aria-hidden="true"></i></a>
+          <a href="#" class="nav-link quick" data-locked role="button" title="Reply" aria-label="Reply"><i class="ri-reply-line" aria-hidden="true"></i></a>
+          <a href="#" class="nav-link quick" data-locked role="button" title="Forward" aria-label="Forward"><i class="ri-share-forward-line" aria-hidden="true"></i></a>
+          <span class="nav-sep" aria-hidden="true"></span>
+          <a href="#" class="nav-link quick nav-danger" data-locked role="button" title="Delete" aria-label="Delete"><i class="ri-delete-bin-line" aria-hidden="true"></i></a>
+        </nav>
+        <h4 id="rSubject"></h4>
+      </div>
+      <div class="mailcontent-group d-none">
+        <div class="mailcontent-item">
+          <div class="mailcontent-header">
+            <div class="mail-avatar"><span id="rAvatar"></span></div>
+            <div class="mailcontent-sender">
+              <h6 id="rFrom"></h6>
+              <p id="rTo"></p>
+            </div>
+            <div class="mailcontent-time" id="rTime"></div>
+          </div>
+          <div class="mailcontent-body">
+            <div id="rBody"></div>
+            <div id="rAttach" class="attach-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="mailcontent-footer d-none">
+        <a href="#" class="btn btn-secondary btn-icontext" data-locked><i class="ri-reply-line me-1"></i> Reply</a>
+        <a href="#" class="btn btn-ghost btn-icontext" data-locked><i class="ri-share-forward-line me-1"></i> Forward</a>
+      </div>
+      <div class="mailcontent-placeholder">
+        <i class="ri-mail-send-line"></i>
+        <h5>No email has been selected</h5>
+      </div>
+    </div>
+
+    <a href="#" class="menu-compose" data-locked role="button" title="New message" aria-label="New message"><i class="ri-pencil-line" aria-hidden="true"></i></a>
+
+    <div class="backdrop"></div>
+    <div id="toast" class="toast-msg" role="status" aria-live="polite"></div>
+    <div id="demoPop" class="demo-pop" role="dialog" aria-modal="true" aria-labelledby="demoPopTitle">
+      <div class="demo-pop-card">
+        <h5 id="demoPopTitle">This is only a demo</h5>
+        <p>It is not an exact copy of the real app, and I haven't kept it up to date. Some things may look or behave differently. All mail here is made up.</p>
+        <button id="demoPopOk" type="button" class="btn btn-primary">Got it</button>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        'use strict';
+        var $ = function (s, r) { return (r || document).querySelector(s); };
+        var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+        var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+
+        // ---- made-up mail (example.com / example.org only) ----
+        var H = 36e5, D = 864e5, now = Date.now();
+        var ME = 'you@example.com';
+        var MAILS = {
+          inbox: [
+            { id: 'i1', from: 'Priya Sharma <priya@example.com>', to: [ME], subject: 'Lunch on Friday?', date: now - 25 * 60e3, read: false,
+              body: '<p>Hi!</p><p>Are you free for lunch on Friday? There is a new place near the station that everyone keeps talking about. Say 1 pm?</p><p>Priya</p>' },
+            { id: 'i2', from: 'Northwind Store <orders@example.org>', to: [ME], subject: 'Your order #48213 has shipped', date: now - 3 * H, read: false,
+              body: '<h3>Good news, it is on the way</h3><p>Your parcel left our warehouse today and should arrive in 2 to 3 days.</p><p><strong>Items</strong><br>1 x Desk lamp<br>2 x USB-C cable</p><p>This is a demo message, there is no real order.</p>' },
+            { id: 'i3', from: 'Dev Team <team@example.com>', to: [ME], subject: 'Weekly notes: release 2.4', date: now - 1 * D - 2 * H, read: true,
+              attach: [{ name: 'release-notes.pdf', size: '84 KB' }],
+              body: '<p>Hello everyone,</p><p>Release 2.4 went out yesterday. Highlights:</p><ul><li>Faster start-up</li><li>Dark mode fixes</li><li>Three bugs squashed</li></ul><p>Notes are attached (made-up file).</p>' },
+            { id: 'i4', from: 'Calendar <noreply@example.org>', to: [ME], subject: 'Reminder: dentist, Tuesday 10:30', date: now - 2 * D - 5 * H, read: true,
+              body: '<p>This is a reminder for your appointment on Tuesday at 10:30.</p><p>Need to move it? Reply to this message.</p>' },
+            { id: 'i5', from: 'Sam Rivera <sam@example.com>', to: [ME], subject: 'Photos from the trip', date: now - 4 * D, read: true,
+              attach: [{ name: 'beach.jpg', size: '2.1 MB' }, { name: 'sunset.jpg', size: '1.8 MB' }],
+              body: '<p>Finally sorted the pictures. Two of my favourites are attached (they are not real files).</p><p>Sam</p>' },
+            { id: 'i6', from: 'Library <hello@example.org>', to: [ME], subject: 'Your book is ready to collect', date: now - 6 * D, read: true,
+              body: '<p>The book you reserved is waiting for you at the front desk. We will keep it for 7 days.</p>' }
+          ],
+          sent: [
+            { id: 's1', from: ME, to: ['priya@example.com'], subject: 'Re: Lunch on Friday?', date: now - 10 * 60e3, read: true,
+              body: '<p>Friday works. See you at 1!</p>' },
+            { id: 's2', from: ME, to: ['team@example.com'], subject: 'Re: Weekly notes: release 2.4', date: now - 1 * D, read: true,
+              body: '<p>Thanks for the update, the start-up time is much better.</p>' }
+          ],
+          drafts: [
+            { id: 'd1', from: ME, to: ['sam@example.com'], subject: 'Trip next year', date: now - 5 * H, read: true,
+              body: '<p>Thinking about where to go next. Ideas so far:</p><ul><li>Mountains</li><li>A small island</li></ul>' }
+          ],
+          trash: [
+            { id: 't1', from: 'Deals <promo@example.org>', to: [ME], subject: 'Big sale this weekend only', date: now - 3 * D, read: true,
+              body: '<p>Everything is 20% off. (Demo spam, nothing here is real.)</p>' }
+          ]
+        };
+        var TITLES = { inbox: 'Inbox', sent: 'Sent', drafts: 'Drafts', trash: 'Bin' };
+        var EMPTY = { icon: 'ri-mail-check-line', title: 'Nothing here', hint: 'No messages match.' };
+        var COLORS = ['green', 'blue', 'indigo', 'red', 'yellow', 'pink', 'purple', 'slate'];
+        var state = { folder: 'inbox', openId: null, unreadOnly: false };
+
+        // ---- helpers ----
+        var parse = function (a) { var m = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/.exec(a); return m ? { name: m[1].trim(), addr: m[2].trim() } : { name: '', addr: String(a).trim() }; };
+        var label = function (a) { var p = parse(a); return p.name || p.addr; };
+        var colorOf = function (who) { var h = 0; label(who).split('').forEach(function (c) { h = (h * 31 + c.charCodeAt(0)) >>> 0; }); return COLORS[h % COLORS.length]; };
+        var sameDay = function (a, b) { return new Date(a).toDateString() === new Date(b).toDateString(); };
+        var fmtDate = function (t) {
+          var d = new Date(t);
+          if (sameDay(t, now)) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+          return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        };
+        var dayLabel = function (t) {
+          if (sameDay(t, now)) return 'Today';
+          if (sameDay(t, now - D)) return 'Yesterday';
+          return new Date(t).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+        };
+        var plain = function (html) { var d = document.createElement('div'); d.innerHTML = html; return (d.textContent || '').replace(/\s+/g, ' ').trim(); };
+        var toastTimer;
+        function toast(msg) {
+          var t = $('#toast'); t.textContent = msg; t.classList.add('show');
+          clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2600);
+        }
+
+        // ---- counts ----
+        function counts() {
+          var unread = MAILS.inbox.filter(function (m) { return !m.read; }).length;
+          $('#unreadCount').textContent = unread || '';
+          $('#totalInbox').textContent = MAILS.inbox.length;
+          $('#totalSent').textContent = MAILS.sent.length;
+          $('#totalDrafts').textContent = MAILS.drafts.length;
+          $('#totalTrash').textContent = MAILS.trash.length;
+          document.title = (unread ? '(' + unread + ') ' : '') + 'Demo - Mail';
+        }
+
+        // ---- list ----
+        function renderList() {
+          var q = $('#search').value.trim().toLowerCase();
+          var folder = state.folder;
+          var items = MAILS[folder].filter(function (m) {
+            if (state.unreadOnly && folder === 'inbox' && m.read) return false;
+            return !q || (m.subject + ' ' + m.from + ' ' + plain(m.body)).toLowerCase().indexOf(q) > -1;
+          });
+          $('#folderTitle').textContent = TITLES[folder];
+          $('#countText').textContent = items.length + (items.length === 1 ? ' message' : ' messages');
+          var ul = $('#mailGroup'); var html = ''; var last = '';
+          if (!items.length) html = '<li class="list-empty"><i class="' + EMPTY.icon + '" aria-hidden="true"></i><strong>' + EMPTY.title + '</strong><span>' + EMPTY.hint + '</span></li>';
+          items.forEach(function (m) {
+            var outgoing = folder === 'sent' || folder === 'drafts';
+            var who = outgoing ? 'To: ' + m.to[0] : label(m.from);
+            var day = dayLabel(m.date);
+            if (day !== last) { last = day; html += '<li class="mail-day" role="presentation">' + esc(day) + '</li>'; }
+            html += '<li class="mail-row"><div class="mail-item' + (m.read ? '' : ' unread') + (m.id === state.openId ? ' active' : '') + '" data-id="' + m.id + '" role="button" tabindex="0">'
+              + '<div class="mail-avatar"><span class="' + colorOf(outgoing ? m.to[0] : m.from) + '">' + esc(label(outgoing ? m.to[0] : m.from).charAt(0).toLowerCase()) + '</span></div>'
+              + '<div class="mail-item-body"><div class="d-flex align-items-center"><h6 class="mail-subject">' + (m.read ? '' : '<span class="visually-hidden">Unread. </span>') + esc(m.subject) + '</h6>'
+              + (m.attach ? '<i class="ri-attachment-2 mail-clip" aria-label="Has attachment"></i>' : '')
+              + '<span class="mail-time">' + esc(fmtDate(m.date)) + '</span></div>'
+              + '<p class="mail-text"><span class="mail-sender' + (folder === 'drafts' ? ' mail-draft' : '') + '">' + esc(who) + '</span> – ' + esc(plain(m.body).slice(0, 110)) + '</p></div></div></li>';
+          });
+          ul.innerHTML = html;
+          counts();
+        }
+
+        // ---- reader ----
+        var FRAME_CSS = '<style>html{color-scheme:dark}html,body{margin:0}body{padding:4px 2px;font:15px/1.65 -apple-system,"Segoe UI",Roboto,sans-serif;color:#cdd6f4;background:transparent;word-wrap:break-word}a{color:#89b4fa}h3{margin:0 0 .6em}p{margin:0 0 1em}ul{margin:0 0 1em;padding-left:1.3em}</style>';
+        function openMail(id) {
+          var m = MAILS[state.folder].filter(function (x) { return x.id === id; })[0];
+          if (!m) return;
+          state.openId = id; m.read = true;
+          var outgoing = state.folder === 'sent' || state.folder === 'drafts';
+          var who = outgoing ? m.to[0] : m.from; var p = parse(m.from);
+          $('#rSubject').textContent = m.subject;
+          var av = $('#rAvatar'); av.className = colorOf(who); av.textContent = label(who).charAt(0).toLowerCase();
+          $('#rFrom').innerHTML = outgoing ? 'Me <span>&lt;' + esc(m.from) + '&gt;</span>' : esc(p.name || p.addr) + (p.name ? ' <span>&lt;' + esc(p.addr) + '&gt;</span>' : '');
+          $('#rTo').textContent = 'to: ' + m.to.join(', ');
+          $('#rTime').textContent = new Date(m.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+          $('#rAttach').innerHTML = (m.attach || []).map(function (a) { return '<span class="attach-chip"><i class="ri-attachment-2"></i> ' + esc(a.name) + ' (' + esc(a.size) + ')</span>'; }).join('');
+          var frame = document.createElement('iframe');
+          frame.setAttribute('sandbox', 'allow-same-origin'); // no scripts, nothing can run inside the mail
+          frame.setAttribute('referrerpolicy', 'no-referrer');
+          frame.className = 'frame-dark';
+          frame.srcdoc = FRAME_CSS + m.body;
+          frame.addEventListener('load', function () { try { frame.style.height = frame.contentDocument.documentElement.scrollHeight + 'px'; } catch (e) { /* ignore */ } });
+          $('#rBody').innerHTML = ''; $('#rBody').appendChild(frame);
+          $('.mailcontent-placeholder').classList.add('d-none');
+          $$('.mailcontent-subject, .mailcontent-group, .mailcontent-footer').forEach(function (el) { el.classList.remove('d-none'); });
+          document.body.classList.add('mailcontent-show');
+          renderList();
+        }
+        function closeReader() {
+          state.openId = null;
+          document.body.classList.remove('mailcontent-show');
+          $('.mailcontent-placeholder').classList.remove('d-none');
+          $$('.mailcontent-subject, .mailcontent-group, .mailcontent-footer').forEach(function (el) { el.classList.add('d-none'); });
+          renderList();
+        }
+
+        // ---- events ----
+        $('#mailGroup').addEventListener('click', function (e) { var it = e.target.closest('.mail-item'); if (it) openMail(it.dataset.id); });
+        $('#mailGroup').addEventListener('keydown', function (e) { var it = e.target.closest('.mail-item'); if (it && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openMail(it.dataset.id); } });
+        $('#folders').addEventListener('click', function (e) {
+          var a = e.target.closest('.nav-link'); if (!a) return; e.preventDefault();
+          state.folder = a.dataset.folder; state.openId = null;
+          $$('#folders .nav-link').forEach(function (n) { n.classList.toggle('active', n === a); });
+          document.body.classList.remove('sidebar-show');
+          closeReader();
+        });
+        $('#mailBack').addEventListener('click', function (e) { e.preventDefault(); closeReader(); });
+        $('.mailbox-menu').addEventListener('click', function (e) {
+          e.preventDefault();
+          if (window.matchMedia('(max-width: 1199px)').matches) document.body.classList.toggle('sidebar-show');
+          else document.body.classList.toggle('sidebar-hide');
+        });
+        $('.backdrop').addEventListener('click', function () { document.body.classList.remove('sidebar-show'); });
+        $('#search').addEventListener('input', renderList);
+        $('#search').addEventListener('focusin', function () { this.parentNode.classList.add('onfocus'); });
+        $('#search').addEventListener('focusout', function () { this.parentNode.classList.remove('onfocus'); if (!this.value) $('.mailbox-header').classList.remove('searching'); });
+        $('#btnSearch').addEventListener('click', function (e) { e.preventDefault(); $('.mailbox-header').classList.add('searching'); $('#search').focus(); });
+        function setFilter(on) {
+          state.unreadOnly = on;
+          $('#filterChip').classList.toggle('d-none', !on);
+          $('#btnFilter').setAttribute('aria-pressed', String(on));
+          renderList();
+        }
+        $('#btnFilter').addEventListener('click', function (e) { e.preventDefault(); setFilter(!state.unreadOnly); });
+        $('#filterChip button').addEventListener('click', function () { setFilter(false); });
+        document.addEventListener('click', function (e) {
+          if (e.target.closest('[data-locked]')) { e.preventDefault(); toast('Not available in the demo'); }
+        });
+
+        renderList();
+        $('#demoPopOk').addEventListener('click', function () { $('#demoPop').hidden = true; });
+      })();
+    </script>
+  </body>
+</html>

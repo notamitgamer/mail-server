@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # The Android app pins Capacitor 6 and the Capacitor Firebase plugin 6 (which needs firebase 10).
+  # Major bumps of the CLI or firebase break the build, so only minor/patch updates are proposed.
+  - package-ecosystem: npm
+    directory: /android-app
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

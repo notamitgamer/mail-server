@@ -47,6 +47,7 @@ Shown with made-up demo mail.
 - To, Cc and Bcc fields that turn each address into a pill
 - All / Unread filter, one-click reader actions and keyboard shortcuts (`j`/`k` move, `r` reply, `c` compose, `/` search)
 - Web Push notifications that open the message straight away
+- Optional Android app (APK) with native push, Mark read / Delete / Reply buttons, `mailto:` links and a share target
 - Single-owner by design: sign in with one Google account
 
 ## Quick start
@@ -62,6 +63,10 @@ node --env-file=.env server.js   # Node 20.6+; or export the variables and run: 
 ```
 
 The app is served at `http://localhost:3000`. For production, deploy it as a Node web service (for example on Render) with the same variables, build command `npm install`, start command `npm start` and health check path `/ping`.
+
+## Android app
+
+A signed APK built from `android-app/` (a thin [Capacitor](https://capacitorjs.com) shell around the web app) is attached to each GitHub release. It delivers notifications through FCM, so only the app needs a battery exemption instead of Chrome, and adds action buttons on notifications, `mailto:` links and Share to Mailbox. Set-up (Firebase Android app, signing key, three repository secrets) is in [android-app/README.md](android-app/README.md) and in the docs.
 
 ## Documentation
 
