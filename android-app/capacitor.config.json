@@ -7,7 +7,15 @@
     "cleartext": false
   },
   "plugins": {
-    "PushNotifications": { "presentationOptions": [] },
-    "FirebaseAuthentication": { "skipNativeAuth": true, "providers": ["google.com"] }
-  }
+    "PushNotifications": {
+      "presentationOptions": []
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": [
+        "google.com"
+      ]
+    }
+  },
+  "backgroundColor": "#141316"
 }
