@@ -1,7 +1,7 @@
 # Android app
 
 A small [Capacitor](https://capacitorjs.com) shell around the live web app, with native Google sign-in and
-FCM push, so notifications reach the phone without Chrome. The UI is the same `public/` app served by the
+FCM push, so notifications reach the phone without Chrome. Notifications are built by a small native service, with Mark read, Delete and Reply buttons; `mailto:` links and Share to Mailbox open compose; the splash and 120 Hz are set natively. The UI is the same `public/` app served by the
 server, so web updates reach the app without a new APK.
 
 ## One-time setup
