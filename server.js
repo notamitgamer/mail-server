@@ -818,6 +818,9 @@ app.get('/assets/js/app.js', (req, res, next) => {
 
 app.get("/privacy", (req, res) => res.sendFile(path.join(__dirname, "public", "privacy.html")));
 
+// Public, read-only demo with made-up mail. No sign-in, no Firestore, no /api calls.
+app.get("/demo", (req, res) => res.sendFile(path.join(__dirname, "public", "demo.html")));
+
 // Proxy Firebase Auth handler to the underlying Firebase app domain
 app.get("/__/auth/*", async (req, res) => {
   const targetUrl = "https://mail-server-notamitgamer.firebaseapp.com" + req.originalUrl;
