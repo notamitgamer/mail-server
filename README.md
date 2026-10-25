@@ -38,14 +38,6 @@ Shown with made-up demo mail.
   </tr>
 </table>
 
-**Android app**
-
-<table>
-  <tr>
-    <td align="center"><img src="assets/screenshots/android-notifications.png" alt="Android notifications" width="320"><br><sub>Notifications from the Android app</sub></td>
-  </tr>
-</table>
-
 ## Features
 
 - Receives mail through a Resend webhook and keeps it in your own Firestore database
