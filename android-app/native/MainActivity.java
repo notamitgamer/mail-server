@@ -50,8 +50,8 @@ public class MainActivity extends BridgeActivity {
     showSplash();
   }
 
-  @Override protected void onResume() { super.onResume(); visible = true; }
-  @Override protected void onPause() { visible = false; super.onPause(); }
+    @Override public void onResume() { super.onResume(); visible = true; }
+  @Override public void onPause() { visible = false; super.onPause(); }
 
   @Override
   protected void onNewIntent(Intent intent) {
