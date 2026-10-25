@@ -5,6 +5,7 @@ const FIREBASE_VER = '11.10.0';
 const state = { folder: 'inbox', mails: [], hasMore: false, loading: false, shown: 30, openId: null, openMail: null, unread: 0, filter: 'all' };
 let config = { aliases: [], fromName: '' };
 const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); // the Android app
+const hap = (kind) => { try { if (window.MailNative) window.MailNative.haptic(kind); else if (navigator.vibrate) navigator.vibrate(kind === 'tick' ? 8 : 16); } catch (e) { /* optional */ } };
 const cap = (name) => window.Capacitor.Plugins[name] || window.Capacitor.registerPlugin(name);
 let getToken = async () => { throw new Error('Not signed in'); };
 let signOutFn = async () => {};
@@ -313,6 +314,7 @@ function setUnread(n) {
   state.unread = Math.max(0, n);
   $('#unreadCount').text(state.unread || '');
   document.title = (state.unread ? `(${state.unread}) ` : '') + 'Mail';
+  try { if (window.MailNative) window.MailNative.setUnread(state.unread || 0); else if (navigator.setAppBadge) (state.unread ? navigator.setAppBadge(state.unread) : navigator.clearAppBadge()).catch(() => {}); } catch (e) { /* optional */ }
 }
 
 function renderList() {
@@ -1043,6 +1045,20 @@ if (isNative()) {
   });
 }
 
+
+// Android app: pick up what the native side queued (notification tap, mailto: link, shared text), and drop the splash.
+let nativeTries = 0;
+window.__nativePending = () => {
+  if (!window.MailNative) return;
+  if (!appReady || !authUser) { if (nativeTries++ < 40) setTimeout(window.__nativePending, 300); return; }
+  let p = null;
+  try { p = JSON.parse(window.MailNative.takePending() || 'null'); } catch (e) { /* none */ }
+  if (!p) return;
+  if (p.kind === 'mail' && p.id) openInboxMail(p.id, { token: p.t }).then(() => { if (p.reply) startReply(); });
+  else if (p.kind === 'compose') openCompose({ to: p.to || [], subject: p.subject || '', body: p.body || '' });
+};
+window.addEventListener('load', () => { setTimeout(() => { try { if (window.MailNative) window.MailNative.hideSplash(); } catch (e) { /* optional */ } }, 500); window.__nativePending(); });
+
 let pushBusy = false;
 async function initPush() { // after sign-in and every time the app comes back to the front: keep notifications on
   if (isNative()) return initNativePush().catch((e) => toast('Could not set up notifications: ' + e.message));
@@ -1172,7 +1188,9 @@ mailGroupEl.addEventListener('touchmove', (e) => {
     let dx = Math.max(-SWIPE_MAX, Math.min(SWIPE_MAX, touch.dx));
     if (dx > 0 && (state.folder !== 'inbox')) dx = 0; // Sent has no read/unread
     touch.row.dataset.dir = dx > 0 ? 'read' : dx < 0 ? 'del' : '';
+    const wasArmed = touch.row.classList.contains('armed');
     touch.row.classList.toggle('armed', Math.abs(dx) >= SWIPE_AT);
+    if (!wasArmed && Math.abs(dx) >= SWIPE_AT) hap('tick');
     slide(touch.row.querySelector('.mail-item'), dx, false);
   } else if (touch.mode === 'pull') {
     e.preventDefault();
