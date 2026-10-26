@@ -138,21 +138,46 @@ public class MainActivity extends BridgeActivity {
     int size = (int) (140 * getResources().getDisplayMetrics().density);
     centerLayout.addView(iconView, new LinearLayout.LayoutParams(size, size));
 
-    // Brand caption
+    splash.addView(centerLayout, new FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+
+    // Footer pinned to the bottom: brand name plus the same credit as the sign-in page
+    final float dp = getResources().getDisplayMetrics().density;
+    final LinearLayout footer = new LinearLayout(this);
+    footer.setOrientation(LinearLayout.VERTICAL);
+    footer.setGravity(Gravity.CENTER_HORIZONTAL);
+    footer.setAlpha(0f);
+    footer.setTranslationY(12f);
+
     final TextView tvBrand = new TextView(this);
     tvBrand.setText("Mailbox");
     tvBrand.setTextSize(18f);
     tvBrand.setTextColor(0xFFE5E1E6);
     tvBrand.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
-    tvBrand.setAlpha(0f);
-    tvBrand.setTranslationY(12f);
-    LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    brandParams.topMargin = (int) (20 * getResources().getDisplayMetrics().density);
-    centerLayout.addView(tvBrand, brandParams);
+    tvBrand.setGravity(Gravity.CENTER);
+    footer.addView(tvBrand, new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-    splash.addView(centerLayout, new FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+    final TextView tvCredit = new TextView(this);
+    tvCredit.setText("Mailbox UI built on SmartMail by ThemePixels (MIT licence).\n"
+        + "Edited and maintained by notamitgamer.\n\n"
+        + "\u00A9 2026\u2013present notamitgamer \u00B7 mail.amit.is-a.dev");
+    tvCredit.setTextSize(12f);
+    tvCredit.setTextColor(0xFF938F99);
+    tvCredit.setGravity(Gravity.CENTER);
+    tvCredit.setLineSpacing(0f, 1.3f);
+    LinearLayout.LayoutParams creditParams = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    creditParams.topMargin = (int) (10 * dp);
+    footer.addView(tvCredit, creditParams);
+
+    FrameLayout.LayoutParams footerParams = new FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+    footerParams.bottomMargin = (int) (32 * dp);
+    footerParams.leftMargin = (int) (24 * dp);
+    footerParams.rightMargin = (int) (24 * dp);
+    splash.addView(footer, footerParams);
 
     addContentView(splash, new ViewGroup.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -167,10 +192,10 @@ public class MainActivity extends BridgeActivity {
       // Fade in brand caption as the flap completes its fold
       if (p >= 0.65f) {
         float bp = Math.min(1f, (p - 0.65f) / 0.25f);
-        tvBrand.setAlpha(bp);
-        tvBrand.setTranslationY((1f - bp) * 12f);
+        footer.setAlpha(bp);
+        footer.setTranslationY((1f - bp) * 12f);
       } else {
-        tvBrand.setAlpha(0f);
+        footer.setAlpha(0f);
       }
     });
     animator.start();
