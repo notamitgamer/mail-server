@@ -97,7 +97,12 @@ hr { color: var(--surface1); }
 /* HTML mail is written for a white page, so it keeps one; plain-text mail follows the theme */
 .mailcontent-body iframe.frame-light { background: #fff; border-radius: 6px; }
 .attach-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.attach-chip { border: 1px solid var(--surface1); border-radius: 6px; padding: 4px 10px; font-size: 13px; color: var(--subtext0); background: var(--surface0); }
+.attach-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; cursor: pointer; font-family: inherit; border: 1px solid var(--surface1); border-radius: 6px; padding: 4px 10px; font-size: 13px; color: var(--subtext0); background: var(--surface0); }
+.attach-chip:hover, .attach-chip:focus-visible { border-color: var(--lavender); color: var(--text); }
+.attach-chip .attach-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip .attach-size { flex: none; opacity: .75; }
+.attach-chip.saved .attach-state { color: var(--green, #a6e3a1); }
+.attach-chip.busy { cursor: progress; opacity: .8; }
 
 /* ---- message menu (three dots) ---- */
 .mailcontent-subject .dropdown { display: inline-block; }
