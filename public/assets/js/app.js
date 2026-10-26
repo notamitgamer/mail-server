@@ -1135,6 +1135,29 @@ if (isNative()) {
 
 // Android app: pick up what the native side queued (notification tap, mailto: link, shared text), and drop the splash.
 let nativeTries = 0;
+// Android shell: sync when the app comes back to the front (the web app's own timer is paused in the background).
+window.__nativeResume = () => { if (authUser && appReady && Date.now() - (meta.app.lastSync || 0) > 15000) syncAll(); };
+// Android shell: the APK comes from GitHub Releases, so look there for a newer build (at most every 6 hours).
+async function checkUpdate() {
+  const N = window.MailNative;
+  if (!N || typeof N.versionCode !== 'function' || !authUser || !appReady) return;
+  let st = {}; try { st = JSON.parse(localStorage.getItem('mb_upd') || '{}'); } catch (e) { /* none */ }
+  if (Date.now() - (st.t || 0) < 6 * 3600 * 1000) return;
+  try {
+    const r = await fetch('https://api.github.com/repos/notamitgamer/mail-server/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+    if (!r.ok) return;
+    const rel = await r.json();
+    const m = /versionCode:\s*(\d+)/.exec(rel.body || '') || /android-build-(\d+)/.exec(rel.tag_name || '');
+    const asset = (rel.assets || []).find((a) => /\.apk$/i.test(a.name));
+    st.t = Date.now(); localStorage.setItem('mb_upd', JSON.stringify(st));
+    if (!m || !asset) return;
+    const latest = Number(m[1]);
+    if (latest <= Number(N.versionCode()) || st.skip === latest) return;
+    const ok = await askConfirm({ title: 'Update available', message: 'A newer version of the Mailbox app is ready (build ' + latest + '). Download it now?', ok: 'Download' });
+    if (ok) N.openUrl(asset.browser_download_url); else { st.skip = latest; localStorage.setItem('mb_upd', JSON.stringify(st)); }
+  } catch (e) { /* offline or rate limited: try again next time */ }
+}
+setTimeout(checkUpdate, 10000);
 window.__nativePending = () => {
   if (!window.MailNative) return;
   if (!appReady || !authUser) { if (nativeTries++ < 40) setTimeout(window.__nativePending, 300); return; }
