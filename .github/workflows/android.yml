@@ -85,4 +85,5 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           name: Android app ${{ env.TAG }}
+          body: "versionCode: ${{ github.run_number }}"
           files: android-app/mailbox.apk

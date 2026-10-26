@@ -12,6 +12,7 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Shader;
 import android.net.MailTo;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -82,6 +83,8 @@ public class MainActivity extends BridgeActivity {
   public void onResume() {
     super.onResume();
     visible = true;
+    getBridge().getWebView().post(() ->
+        getBridge().getWebView().evaluateJavascript("window.__nativeResume&&window.__nativeResume()", null));
   }
 
   @Override
@@ -479,6 +482,24 @@ public class MainActivity extends BridgeActivity {
           : "success".equals(kind) ? (Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.CONTEXT_CLICK)
           : HapticFeedbackConstants.CLOCK_TICK;
       runOnUiThread(() -> getBridge().getWebView().performHapticFeedback(c, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING));
+    }
+
+    /** Build number of the installed app (the release workflow sets it to the run number). */
+    @JavascriptInterface
+    public int versionCode() {
+      try {
+        android.content.pm.PackageInfo pi = MainActivity.this.getPackageManager().getPackageInfo(MainActivity.this.getPackageName(), 0);
+        return (int) (Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode);
+      } catch (Exception e) {
+        return 0;
+      }
+    }
+
+    /** Opens a release download in the browser; only this repo's GitHub URLs are allowed. */
+    @JavascriptInterface
+    public void openUrl(String u) {
+      if (u == null || !u.startsWith("https://github.com/notamitgamer/mail-server/")) return;
+      runOnUiThread(() -> MainActivity.this.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u))));
     }
 
     /** Clear notification badges when inbox has no unread messages. */

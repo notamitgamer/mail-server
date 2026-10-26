@@ -459,28 +459,106 @@ const FRAME_BASE = 'body{margin:0;padding:12px 4px;font:14px/1.5 -apple-system,S
 const FRAME_LIGHT = `${FRAME_CSP}<style>html{background:#fff}${FRAME_BASE}body{color:#202124}a{color:#1a56db}</style>`;
 const FRAME_DARK = `${FRAME_CSP}<style>html{background:transparent;color-scheme:dark}${FRAME_BASE}body{color:#e6e1e5}a{color:#d0bcff}</style>`;
 
-// Phone back button / swipe: the reader and the sidebar are "layers" with their own history entry,
-// so back closes the layer instead of leaving the site.
-const layers = []; let ignorePop = 0;
-function pushLayer(name) { layers.push(name); history.pushState({ mb: name }, ''); }
-function closeLayer(name) {
-  $('body').removeClass(name === 'mail' ? 'mailcontent-show' : 'sidebar-show');
-  const i = layers.lastIndexOf(name);
-  if (i >= 0 && i === layers.length - 1) { layers.pop(); ignorePop++; history.back(); } else if (i >= 0) layers.splice(i, 1);
+// Phone back button / swipe: every screen layered on top of the list (reader, sidebar, compose, popups, a
+// folder other than Inbox, the unread filter, search) is a "layer" with its own history entry, so back closes
+// the top layer instead of leaving the app. `depth` counts the history entries we added; sync() keeps it equal
+// to layers.length, so UI changes and system back can never get out of step.
+const layers = []; let depth = 0, hopping = 0;
+const openModals = new Set(); let menuOpen = false;
+function sync() {
+  if (hopping) return; // a history.go() is in flight; popstate will call sync() again
+  while (depth < layers.length) history.pushState({ mb: ++depth }, '');
+  if (depth > layers.length) { hopping = depth - layers.length; history.go(-hopping); }
 }
+function undoLayer(name) { // put the screen back the way it was without this layer
+  if (name === 'mail') $('body').removeClass('mailcontent-show');
+  else if (name === 'side') $('body').removeClass('sidebar-show');
+  else if (name === 'compose') { if (!$('.compose').hasClass('d-none')) $('.nav-link-close').first().trigger('click'); }
+  else if (name === 'modal') {
+    const el = [...document.querySelectorAll('.modal.show')].pop();
+    if (el) { openModals.delete(el.id); window.bootstrap.Modal.getOrCreateInstance(el).hide(); }
+  }
+  else if (name === 'menu') { menuOpen = false; const t = document.getElementById('btnMore'); if (t) window.bootstrap.Dropdown.getOrCreateInstance(t).hide(); }
+  else if (name === 'list') closeCsList(true);
+  else if (name === 'folder') $('#folders .nav-link[data-folder="inbox"]').trigger('click');
+  else if (name === 'filter') setFilter('all');
+  else if (name === 'search') { $('#search').val('').trigger('input').trigger('blur'); $('.mailbox-header').removeClass('searching'); }
+}
+function pushLayer(name) { layers.push(name); sync(); }
+function dropLayer(name) { const i = layers.lastIndexOf(name); if (i >= 0) layers.splice(i, 1); sync(); }
+function closeLayer(name) { dropLayer(name); undoLayer(name); }
 window.addEventListener('popstate', () => {
-  if (ignorePop) { ignorePop--; return; }
+  if (hopping) { depth -= hopping; hopping = 0; sync(); return; }
+  if (depth > 0) depth--; // the person pressed back: history already moved one step
   const name = layers.pop();
-  if (!name || name === 'mail') $('body').removeClass('mailcontent-show');
-  if (!name || name === 'side') $('body').removeClass('sidebar-show');
+  if (name) undoLayer(name);
+  sync();
 });
-
-// Called by the Android app (MainActivity) on the system back button: closes the top layer, returns false if none is open.
+// Called by the Android app (MainActivity) on the system back button: closes the top layer, false if none is open.
 window.__layerBack = () => {
-  if (!layers.length) return false;
-  closeLayer(layers[layers.length - 1]);
+  const name = layers.pop();
+  if (!name) return false;
+  undoLayer(name); sync();
   return true;
 };
+// Popups: Bootstrap modals and the "More" menu register themselves while they are open.
+$('.modal').on('show.bs.modal', function () { if (!openModals.has(this.id)) { openModals.add(this.id); pushLayer('modal'); } })
+  .on('hidden.bs.modal', function () { if (openModals.delete(this.id)) dropLayer('modal'); });
+$('#btnMore').parent().on('show.bs.dropdown', () => { if (!menuOpen) { menuOpen = true; pushLayer('menu'); } })
+  .on('hidden.bs.dropdown', () => { if (menuOpen) { menuOpen = false; dropLayer('menu'); } });
+
+// ---- custom lists: themed replacement for the native <select> popup (the phone's own picker can't be themed or closed by back) ----
+let csOpen = null;
+const csList = document.createElement('ul');
+csList.id = 'csList'; csList.className = 'cs-list d-none'; csList.setAttribute('role', 'listbox');
+document.body.appendChild(csList);
+function csRefresh(sel) {
+  if (!sel._csBtn) return;
+  const o = sel.options[sel.selectedIndex];
+  sel._csBtn.textContent = o ? o.textContent : '';
+  sel._csBtn.disabled = sel.disabled || !sel.options.length;
+}
+function closeCsList(fromBack) {
+  if (!csOpen) return;
+  csOpen.btn.setAttribute('aria-expanded', 'false');
+  csOpen = null; csList.classList.add('d-none'); csList.innerHTML = '';
+  if (!fromBack) dropLayer('list');
+}
+function openCsList(sel) {
+  closeCsList(false);
+  const btn = sel._csBtn; const r = btn.getBoundingClientRect();
+  csList.innerHTML = [...sel.options].map((o, i) => `<li role="option" data-i="${i}" class="cs-item${i === sel.selectedIndex ? ' on' : ''}" aria-selected="${i === sel.selectedIndex}">${esc(o.textContent)}</li>`).join('');
+  csList.classList.remove('d-none');
+  const w = Math.min(Math.max(r.width, 180), window.innerWidth - 16);
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+  const below = window.innerHeight - r.bottom; const up = below < 220 && r.top > below;
+  csList.style.cssText = `width:${w}px;left:${left}px;max-height:${Math.max(120, Math.min(window.innerHeight * 0.45, (up ? r.top : below) - 12))}px;`
+    + (up ? `bottom:${window.innerHeight - r.top + 4}px;top:auto` : `top:${r.bottom + 4}px;bottom:auto`);
+  csOpen = { sel, btn }; btn.setAttribute('aria-expanded', 'true');
+  pushLayer('list');
+  const on = csList.querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+}
+function customSelect(sel) {
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'cs-btn ' + sel.className;
+  btn.setAttribute('aria-haspopup', 'listbox'); btn.setAttribute('aria-expanded', 'false');
+  if (sel.getAttribute('aria-label')) btn.setAttribute('aria-label', sel.getAttribute('aria-label'));
+  sel.classList.add('cs-native'); sel.tabIndex = -1; sel._csBtn = btn;
+  sel.insertAdjacentElement('afterend', btn);
+  btn.addEventListener('click', () => { if (csOpen && csOpen.sel === sel) closeCsList(false); else openCsList(sel); });
+  new MutationObserver(() => csRefresh(sel)).observe(sel, { childList: true, subtree: true });
+  $(sel).on('change', () => csRefresh(sel));
+  csRefresh(sel);
+}
+csList.addEventListener('click', (e) => {
+  const li = e.target.closest('.cs-item'); if (!li || !csOpen) return;
+  const sel = csOpen.sel; sel.selectedIndex = Number(li.dataset.i);
+  closeCsList(false); csRefresh(sel); $(sel).trigger('change');
+});
+document.addEventListener('pointerdown', (e) => { if (csOpen && !csList.contains(e.target) && !csOpen.btn.contains(e.target)) closeCsList(false); });
+const jqVal = $.fn.val; // .val(x) on a <select> doesn't fire events, so refresh the label ourselves
+$.fn.val = function (v) { const r = jqVal.apply(this, arguments); if (arguments.length) this.filter('select').each((_, el) => csRefresh(el)); return r; };
+['cFrom', 'cTplSel', 'tplPick'].forEach((id) => customSelect(document.getElementById(id)));
 
 function showReader() {
   $('.mailcontent-placeholder').addClass('d-none').siblings().removeClass('d-none');
@@ -733,6 +811,7 @@ function openCompose({ to = [], cc = [], bcc = [], from = '', subject = '', body
   $('.compose').data({ replyToId, draftId, tplSkipped: false }).removeClass('d-none minimize');
   attachTemplate(template);
   $('.menu-compose').addClass('d-none');
+  if (!layers.includes('compose')) pushLayer('compose');
   if (!template) offerTemplate();
   if (asList(to).length) { const el = $('#cBody').trigger('focus')[0]; el.setSelectionRange(0, 0); el.scrollTop = 0; } else $('#cTo .pill-input').trigger('focus');
   clearTimeout(draftTimer); composeDirty = false;
@@ -742,6 +821,7 @@ function closeCompose() {
   clearTimeout(draftTimer); composeDirty = false;
   $('.compose').addClass('d-none').removeClass('minimize fullscreen');
   $('.menu-compose').removeClass('d-none');
+  dropLayer('compose');
 }
 
 async function editDraft(id) {
@@ -1055,6 +1135,29 @@ if (isNative()) {
 
 // Android app: pick up what the native side queued (notification tap, mailto: link, shared text), and drop the splash.
 let nativeTries = 0;
+// Android shell: sync when the app comes back to the front (the web app's own timer is paused in the background).
+window.__nativeResume = () => { if (authUser && appReady && Date.now() - (meta.app.lastSync || 0) > 15000) syncAll(); };
+// Android shell: the APK comes from GitHub Releases, so look there for a newer build (at most every 6 hours).
+async function checkUpdate() {
+  const N = window.MailNative;
+  if (!N || typeof N.versionCode !== 'function' || !authUser || !appReady) return;
+  let st = {}; try { st = JSON.parse(localStorage.getItem('mb_upd') || '{}'); } catch (e) { /* none */ }
+  if (Date.now() - (st.t || 0) < 6 * 3600 * 1000) return;
+  try {
+    const r = await fetch('https://api.github.com/repos/notamitgamer/mail-server/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+    if (!r.ok) return;
+    const rel = await r.json();
+    const m = /versionCode:\s*(\d+)/.exec(rel.body || '') || /android-build-(\d+)/.exec(rel.tag_name || '');
+    const asset = (rel.assets || []).find((a) => /\.apk$/i.test(a.name));
+    st.t = Date.now(); localStorage.setItem('mb_upd', JSON.stringify(st));
+    if (!m || !asset) return;
+    const latest = Number(m[1]);
+    if (latest <= Number(N.versionCode()) || st.skip === latest) return;
+    const ok = await askConfirm({ title: 'Update available', message: 'A newer version of the Mailbox app is ready (build ' + latest + '). Download it now?', ok: 'Download' });
+    if (ok) N.openUrl(asset.browser_download_url); else { st.skip = latest; localStorage.setItem('mb_upd', JSON.stringify(st)); }
+  } catch (e) { /* offline or rate limited: try again next time */ }
+}
+setTimeout(checkUpdate, 10000);
 window.__nativePending = () => {
   if (!window.MailNative) return;
   if (!appReady || !authUser) { if (nativeTries++ < 40) setTimeout(window.__nativePending, 300); return; }
@@ -1242,6 +1345,7 @@ $('#folders').on('click', '.nav-link', function (e) {
   e.preventDefault();
   $(this).addClass('active').siblings().removeClass('active');
   state.folder = this.dataset.folder;
+  if (state.folder === 'inbox') dropLayer('folder'); else if (!layers.includes('folder')) pushLayer('folder');
   $('#folderTitle').text(TITLES[state.folder] || 'Inbox');
   $('#btnEmptyBin').toggleClass('d-none', state.folder !== 'trash');
   setFilter('all'); $('.mailbox-header').removeClass('searching');
@@ -1295,6 +1399,7 @@ boot();
 // ---- unread filter, reader actions, keyboard shortcuts ----
 function setFilter(f) {
   state.filter = f;
+  if (f === 'unread' && state.folder === 'inbox') { if (!layers.includes('filter')) pushLayer('filter'); } else dropLayer('filter');
   $('#btnFilter').toggleClass('d-none', state.folder !== 'inbox').toggleClass('on', f === 'unread')
     .attr({ 'aria-pressed': String(f === 'unread'), title: f === 'unread' ? 'Showing unread only' : 'Show unread only' });
   $('#filterChip').toggleClass('d-none', !(f === 'unread' && state.folder === 'inbox'));
@@ -1302,9 +1407,9 @@ function setFilter(f) {
 }
 $('#filterChip button').on('click', () => setFilter('all'));
 $('#btnFilter').on('click', (e) => { e.preventDefault(); setFilter(state.filter === 'unread' ? 'all' : 'unread'); });
-const openSearch = () => { $('.mailbox-header').addClass('searching'); $('#search').trigger('focus'); };
+const openSearch = () => { $('.mailbox-header').addClass('searching'); if (!layers.includes('search')) pushLayer('search'); $('#search').trigger('focus'); };
 $('#btnSearch').on('click', (e) => { e.preventDefault(); openSearch(); });
-$('#search').on('blur', () => { if (!$('#search').val()) $('.mailbox-header').removeClass('searching'); })
+$('#search').on('blur', () => { if (!$('#search').val()) { $('.mailbox-header').removeClass('searching'); dropLayer('search'); } })
   .on('keydown', (e) => { if (e.key === 'Escape') { $('#search').val('').trigger('input').trigger('blur'); } });
 $('#btnFwdTop, #btnForward').on('click', (e) => { e.preventDefault(); openForward(); });
 $('#btnUnreadTop').on('click', (e) => { e.preventDefault(); markUnread(); });
