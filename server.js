@@ -147,6 +147,71 @@ const archiveEmail = async ({ emailId, from, to, subject, receivedAt, parsed, fe
   }
 };
 
+// ---- Attachments ------------------------------------------------------------
+// The file bytes are kept in Firestore as chunks (one document is capped near 1 MiB), in a collection of their
+// own so they stay put when a mail moves to the bin and back. Without our own copy, Resend's temporary download
+// links would be the only source, and they expire after an hour.
+const ATT_CHUNK = 900 * 1024;
+const MAX_ATT_BYTES = 15 * 1024 * 1024; // per file; bigger ones are listed but not kept
+const MAX_ATT_TOTAL = 25 * 1024 * 1024; // per mail
+const attId = (mailId, n, c) => `${mailId}_${n}_${c}`;
+
+const storeAttachment = async (mailId, n, content) => {
+  const chunks = Math.ceil(content.length / ATT_CHUNK) || 1;
+  for (let c = 0; c < chunks; c += 3) { // about 2.7 MB per commit
+    const batch = db.batch();
+    for (let i = c; i < Math.min(c + 3, chunks); i++) {
+      batch.set(db.collection('attachments').doc(attId(mailId, n, i)), {
+        mailId, n, c: i, chunks, size: content.length,
+        data: content.subarray(i * ATT_CHUNK, (i + 1) * ATT_CHUNK),
+      });
+    }
+    await batch.commit();
+  }
+};
+
+// Best effort: a failure here is not fatal, the file is fetched from Resend again when it is first opened.
+const storeAttachments = async (mailId, attachments) => {
+  let total = 0;
+  for (let n = 0; n < attachments.length; n++) {
+    const content = attachments[n].content;
+    if (!Buffer.isBuffer(content) || !content.length || content.length > MAX_ATT_BYTES || total + content.length > MAX_ATT_TOTAL) continue;
+    total += content.length;
+    try { await storeAttachment(mailId, n, content); } catch (err) { console.error('Attachment not stored:', err.message); }
+  }
+};
+
+const readAttachment = async (mailId, n) => {
+  const first = await db.collection('attachments').doc(attId(mailId, n, 0)).get();
+  if (!first.exists) return null;
+  const { chunks, size } = first.data();
+  if (!(chunks >= 1 && chunks <= 64)) return null;
+  const parts = [Buffer.from(first.data().data)];
+  if (chunks > 1) {
+    const refs = [];
+    for (let i = 1; i < chunks; i++) refs.push(db.collection('attachments').doc(attId(mailId, n, i)));
+    for (const snap of await db.getAll(...refs)) {
+      if (!snap.exists) return null; // half-written: treat as missing so it is fetched again
+      parts.push(Buffer.from(snap.data().data));
+    }
+  }
+  const buf = Buffer.concat(parts);
+  return buf.length === size ? buf : null;
+};
+
+const deleteAttachments = async (mailIds) => {
+  for (const id of mailIds) {
+    const snap = await db.collection('attachments').where('mailId', '==', id).select().get();
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = db.batch();
+      snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+};
+// ids of the mails in a query result that have files (the query must select 'attachments')
+const withFiles = (snap) => snap.docs.filter((d) => (d.get('attachments') || []).length).map((d) => d.id);
+
 // ---- Push delivery ----------------------------------------------------------
 const pushHash = (endpoint) => crypto.createHash('sha256').update(endpoint).digest('hex');
 
@@ -290,6 +355,8 @@ app.post('/api/incoming', express.text({ type: 'application/json' }), async (req
       receivedAt,
       parsed,
     });
+    // Keep the attachment files before notifying, so the first tap on the notification can already download them.
+    if (saved && parsed?.attachments?.length) await storeAttachments(emailData.email_id, parsed.attachments);
     // Push only for a mail that was newly saved, so a webhook retry does not notify twice.
     if (saved) await sendPush({ emailId: emailData.email_id, from: originalSender, subject, snippet: makeSnippet(parsed), doc: saved });
     return res.status(200).json({ success: true });
@@ -378,11 +445,12 @@ app.get('/api/config', (req, res) => {
 // Removes bin mail older than TRASH_DAYS (checked whenever the bin is read, and every few hours).
 async function purgeTrash() {
   const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - TRASH_DAYS * 86400000);
-  const snap = await db.collection('trash').where('deletedAt', '<', cutoff).select().limit(400).get();
+  const snap = await db.collection('trash').where('deletedAt', '<', cutoff).select('attachments').limit(400).get();
   if (snap.empty) return 0;
   const batch = db.batch();
   snap.docs.forEach((d) => batch.delete(d.ref));
   await batch.commit();
+  await deleteAttachments(withFiles(snap)).catch((e) => console.error('deleteAttachments', e.message));
   return snap.size;
 }
 if (db) setInterval(() => purgeTrash().catch((e) => console.error('purgeTrash', e)), 6 * 3600000).unref();
@@ -417,6 +485,40 @@ app.get('/api/mails/:id', requireOwner, handle(async (req, res) => {
   const snap = await db.collection(FOLDERS[folder].collection).doc(req.params.id).get();
   if (!snap.exists) return res.status(404).json({ error: 'Not found' });
   return res.set('Cache-Control', 'no-store').json(toFull(snap.id, snap.data(), folder));
+}));
+
+// One attachment of a received mail, as raw bytes. The app saves it on the device (like Gmail's offline mode), so
+// this is normally called once per file per device. Sent as a download, never rendered by the browser itself.
+const safeMime = (t) => (/^[a-z0-9][\w.+-]*\/[a-z0-9][\w.+-]*$/i.test(String(t || '')) ? String(t).toLowerCase() : 'application/octet-stream');
+app.get('/api/mails/:id/attachments/:n', requireOwner, handle(async (req, res) => {
+  const n = Number(req.params.n);
+  if (!ID_RE.test(req.params.id) || !Number.isInteger(n) || n < 0 || n > 99) return res.status(400).json({ error: 'Bad request' });
+  const folder = folderOf(req);
+  if (folder === 'drafts') return res.status(404).json({ error: 'Not found' });
+  const snap = await db.collection(FOLDERS[folder].collection).doc(req.params.id).get();
+  const info = snap.exists ? (snap.data().attachments || [])[n] : null;
+  if (!info) return res.status(404).json({ error: 'Not found' });
+
+  let buf = await readAttachment(req.params.id, n);
+  const received = folder === 'inbox' || (folder === 'trash' && snap.data().origin !== 'sent');
+  if (!buf && received) { // a mail from before files were kept, or saving them failed: fetch it from Resend again
+    try {
+      const a = (await fetchFullEmail(req.params.id)).attachments?.[n];
+      if (a && Buffer.isBuffer(a.content) && (a.filename || 'attachment') === info.filename) {
+        buf = a.content;
+        if (buf.length <= MAX_ATT_BYTES) storeAttachment(req.params.id, n, buf).catch((e) => console.error('Attachment not stored:', e.message));
+      }
+    } catch (err) { console.error('Attachment fetch failed:', err.message); }
+  }
+  if (!buf) return res.status(404).json({ error: 'This attachment is no longer available' });
+  const name = encodeURIComponent(info.filename || 'attachment').replace(/['()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  return res.set({
+    'Content-Type': safeMime(info.contentType),
+    'Content-Disposition': `attachment; filename*=UTF-8''${name}`,
+    'Content-Security-Policy': 'sandbox',
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'private, no-store',
+  }).send(buf);
 }));
 
 // Incremental sync for the offline cache. Full messages, so the app can show them without the network.
@@ -499,6 +601,7 @@ app.delete('/api/mails/:id', requireOwner, handle(async (req, res) => {
     return res.json({ ok: true, trashed: true });
   }
   await ref.delete(); // deleting a missing doc is fine
+  if (folder === 'trash') await deleteAttachments([req.params.id]).catch((e) => console.error('deleteAttachments', e.message));
   return res.json({ ok: true });
 }));
 
@@ -519,11 +622,12 @@ app.post('/api/mails/:id/restore', requireOwner, handle(async (req, res) => {
 app.delete('/api/trash', requireOwner, handle(async (req, res) => {
   let deleted = 0;
   for (;;) {
-    const snap = await db.collection('trash').select().limit(400).get();
+    const snap = await db.collection('trash').select('attachments').limit(400).get();
     if (snap.empty) break;
     const batch = db.batch();
     snap.docs.forEach((d) => batch.delete(d.ref));
     await batch.commit();
+    await deleteAttachments(withFiles(snap)).catch((e) => console.error('deleteAttachments', e.message));
     deleted += snap.size;
   }
   return res.json({ ok: true, deleted });

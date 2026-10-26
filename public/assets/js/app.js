@@ -138,13 +138,15 @@ const store = {
     return txDone(t);
   },
   async prune(folder, ids) { // drop saved mail that no longer exists on the server (deleted on another device)
-    const keep = new Set(ids);
+    const keep = new Set(ids); const gone = [];
     const d = await idb;
-    if (!d) { memMails.forEach((r, k) => { if (r.folder === folder && !keep.has(r.id)) memMails.delete(k); }); return; }
-    const t = d.transaction('mails', 'readwrite');
-    const c = t.objectStore('mails').index('byDate').openCursor(bounds(folder));
-    c.onsuccess = () => { const cur = c.result; if (!cur) return; if (!keep.has(cur.value.id)) cur.delete(); cur.continue(); };
-    return txDone(t);
+    if (!d) { memMails.forEach((r, k) => { if (r.folder === folder && !keep.has(r.id)) { memMails.delete(k); gone.push(r.id); } }); } else {
+      const t = d.transaction('mails', 'readwrite');
+      const c = t.objectStore('mails').index('byDate').openCursor(bounds(folder));
+      c.onsuccess = () => { const cur = c.result; if (!cur) return; if (!keep.has(cur.value.id)) { gone.push(cur.value.id); cur.delete(); } cur.continue(); };
+      await txDone(t);
+    }
+    for (const id of gone) await fileStore.removeMail(id).catch(() => {}); // their saved attachments go too
   },
   async reconcile(unreadIds) { // make saved inbox read flags match the server
     const unread = new Set(unreadIds);
@@ -178,6 +180,79 @@ const store = {
   },
 };
 
+// ---------- attachments on this device ----------
+// Files you open, plus small ones fetched in the background, are kept here (like Gmail's offline mode) so they
+// open without the network. A database of its own: a mail row never has to be rewritten when a file is saved.
+const FILE_CACHE_MAX = 250 * 1024 * 1024; // past this, the oldest saved files are dropped (they can be downloaded again)
+const AUTO_FILE_MAX = 1024 * 1024; // files up to this size are fetched in the background after a sync
+const fdb = new Promise((resolve) => {
+  if (!window.indexedDB) return resolve(null);
+  const r = indexedDB.open('mailbox-files', 1);
+  r.onupgradeneeded = () => {
+    const d = r.result;
+    d.createObjectStore('files', { keyPath: 'key' }).createIndex('byMail', 'mailId'); // small records: name, type, size
+    d.createObjectStore('blobs'); // the bytes, kept apart so listing files never loads them
+  };
+  r.onsuccess = () => resolve(r.result);
+  r.onerror = () => resolve(null);
+});
+const memFiles = new Map(); // used only if IndexedDB is unavailable (this session)
+const fileStore = {
+  async get(key) { // the file with its bytes, or null
+    const d = await fdb;
+    if (!d) return memFiles.get(key) || null;
+    const info = await req2p(d.transaction('files').objectStore('files').get(key));
+    if (!info) return null;
+    const buf = await req2p(d.transaction('blobs').objectStore('blobs').get(key));
+    return buf ? { ...info, buf } : null;
+  },
+  async saved(mailId) { // numbers of this mail's attachments that are on the device
+    const d = await fdb;
+    if (!d) return [...memFiles.values()].filter((f) => f.mailId === mailId).map((f) => f.n);
+    return (await req2p(d.transaction('files').objectStore('files').index('byMail').getAll(mailId))).map((f) => f.n);
+  },
+  async put(rec) { // { key, mailId, n, name, type, size, ts, buf }
+    const d = await fdb;
+    if (!d) { memFiles.set(rec.key, rec); return; }
+    const { buf, ...info } = rec;
+    const t = d.transaction(['files', 'blobs'], 'readwrite');
+    t.objectStore('files').put(info); t.objectStore('blobs').put(buf, rec.key);
+    await txDone(t);
+    await fileStore.trim().catch(() => {});
+  },
+  async removeMail(mailId) {
+    memFiles.forEach((f, k) => { if (f.mailId === mailId) memFiles.delete(k); });
+    const d = await fdb;
+    if (!d) return;
+    const keys = await req2p(d.transaction('files').objectStore('files').index('byMail').getAllKeys(mailId));
+    if (!keys.length) return;
+    const t = d.transaction(['files', 'blobs'], 'readwrite');
+    keys.forEach((k) => { t.objectStore('files').delete(k); t.objectStore('blobs').delete(k); });
+    return txDone(t);
+  },
+  async trim() { // keep the total under FILE_CACHE_MAX, oldest first
+    const d = await fdb;
+    if (!d) return;
+    const all = await req2p(d.transaction('files').objectStore('files').getAll());
+    let total = all.reduce((s, f) => s + f.size, 0);
+    if (total <= FILE_CACHE_MAX) return;
+    const t = d.transaction(['files', 'blobs'], 'readwrite');
+    for (const f of all.sort((a, b) => a.ts - b.ts)) {
+      if (total <= FILE_CACHE_MAX * 0.9) break;
+      t.objectStore('files').delete(f.key); t.objectStore('blobs').delete(f.key); total -= f.size;
+    }
+    return txDone(t);
+  },
+  async clear() {
+    memFiles.clear();
+    const d = await fdb;
+    if (!d) return;
+    const t = d.transaction(['files', 'blobs'], 'readwrite');
+    t.objectStore('files').clear(); t.objectStore('blobs').clear();
+    return txDone(t);
+  },
+};
+
 // Per-folder sync cursor ({ newest, oldest, hasOlder } as ms timestamps) and app-level bits.
 const fresh = () => ({ inbox: {}, sent: {}, drafts: {}, trash: {}, app: { unread: 0, pendingRead: [], lastSync: 0 } });
 let meta = fresh();
@@ -196,7 +271,7 @@ function showSignin(msg, button) {
 
 async function wipeLocal() { // sign-out, or a different/blocked account: nothing stays on this device
   localStorage.removeItem('mb_user');
-  await store.clear();
+  await store.clear(); await fileStore.clear().catch(() => {});
   meta = fresh(); appReady = null; state.mails = []; state.hasMore = false; state.shown = PAGE;
   hideReader(); setUnread(0); renderList();
 }
@@ -207,6 +282,7 @@ async function api(path, opts = {}) {
     ...opts,
     headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), Authorization: 'Bearer ' + token },
   });
+  if (res.ok && opts.binary) return res.arrayBuffer(); // a file, not JSON
   let data = null;
   try { data = await res.json(); } catch (e) { /* no body */ }
   if (!res.ok) {
@@ -434,6 +510,7 @@ async function syncAll({ reconcile = false, manual = false } = {}) {
   } catch (e) { if (manual || navigator.onLine) toast(e.status ? e.message : 'Could not sync. Showing saved mail.'); }
   syncing = false; state.loading = false; $('#refresh i').removeClass('spin');
   await showFolder();
+  prefetchFiles();
 }
 
 async function loadMore() {
@@ -593,6 +670,102 @@ function renderBody(m) {
   if (m.truncated) $('#rBody').append('<p class="text-muted small mt-2">This message was shortened because it is very large.</p>');
 }
 
+// ---------- attachments ----------
+const MIME_RE = /^[a-z0-9][\w.+-]*\/[a-z0-9][\w.+-]*$/;
+// Only types the browser shows without running anything are opened in a tab. Everything else (HTML, SVG, scripts...)
+// is saved as an opaque download, so a file from outside can never run inside this app's origin.
+const PREVIEWABLE = /^(image\/(png|jpe?g|gif|webp|avif|bmp)|application\/pdf|text\/plain|audio\/(mpeg|mp4|ogg|wav|webm)|video\/(mp4|webm))$/;
+const noFile = new Set(); // files the server said are gone: not asked for again this session
+let persistAsked = false;
+function askPersist() { // ask the browser not to evict saved files when the device runs low on space
+  if (persistAsked) return; persistAsked = true;
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }
+}
+
+function attachChips(m) {
+  return (m.attachments || []).map((a, n) => `<button type="button" class="attach-chip" data-n="${n}" title="Download ${esc(a.filename)}">`
+    + '<i class="ri-download-2-line attach-state" aria-hidden="true"></i>'
+    + `<span class="attach-name">${esc(a.filename)}</span>${a.size ? `<span class="attach-size">${fmtSize(a.size)}</span>` : ''}</button>`).join('');
+}
+function setChip(el, st) { // 'idle' | 'busy' | 'saved'
+  el.classList.toggle('busy', st === 'busy'); el.classList.toggle('saved', st === 'saved');
+  el.querySelector('.attach-state').className = 'attach-state ' + (st === 'busy' ? 'ri-loader-4-line spin' : st === 'saved' ? 'ri-check-line' : 'ri-download-2-line');
+  el.title = (st === 'saved' ? 'Open ' : 'Download ') + (el.querySelector('.attach-name').textContent || '');
+}
+async function markSavedFiles(m) { // tick the files that are already on this device
+  const saved = new Set(await fileStore.saved(m.id).catch(() => []));
+  if (state.openId !== m.id) return;
+  $('#rAttach .attach-chip').each((i, el) => { if (saved.has(Number(el.dataset.n))) setChip(el, 'saved'); });
+}
+
+// Download one attachment and keep it on this device. A failure to save (storage full) still hands the file over.
+async function fetchFile(m, n, a, folder) {
+  const buf = await api(`/api/mails/${encodeURIComponent(m.id)}/attachments/${n}?folder=${folder}`, { binary: true });
+  const type = String(a.contentType || '').toLowerCase();
+  const rec = { key: m.id + ':' + n, mailId: m.id, n, name: a.filename || 'attachment', type: MIME_RE.test(type) ? type : 'application/octet-stream', size: buf.byteLength, ts: Date.now(), buf };
+  try { await fileStore.put(rec); askPersist(); rec.saved = true; } catch (e) { rec.saved = false; }
+  return rec;
+}
+
+function b64(buf) {
+  const u = new Uint8Array(buf); let s = '';
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function deliverFile(rec) {
+  const N = window.MailNative;
+  if (N) { // Android app: a WebView cannot download a blob, so the app saves it into Downloads and offers to open it
+    if (typeof N.saveFile !== 'function') return toast('Update the app to download attachments.');
+    let ok = false;
+    try { ok = N.saveFile(rec.name, rec.type, b64(rec.buf)); } catch (e) { /* reported below */ }
+    return toast(ok ? 'Saved to Downloads' : 'Could not save this file.');
+  }
+  const preview = PREVIEWABLE.test(rec.type);
+  const url = URL.createObjectURL(new Blob([rec.buf], { type: preview ? rec.type : 'application/octet-stream' }));
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+  if (preview && window.open(url, '_blank', 'noopener')) return;
+  const link = document.createElement('a');
+  link.href = url; link.download = rec.name; document.body.appendChild(link); link.click(); link.remove();
+}
+
+async function openAttachment(m, n, el) {
+  const a = m && (m.attachments || [])[n];
+  if (!a || (el && el.classList.contains('busy'))) return;
+  let rec = await fileStore.get(m.id + ':' + n).catch(() => null);
+  if (!rec) {
+    if (!navigator.onLine) return toast('Go online to download this file.');
+    if (el) setChip(el, 'busy');
+    try { rec = await fetchFile(m, n, a, state.folder); } catch (e) {
+      if (e.status === 404) noFile.add(m.id + ':' + n);
+      if (el) setChip(el, 'idle');
+      return toast(e.status === 404 ? 'This file is no longer available.' : e.message);
+    }
+    if (el) setChip(el, rec.saved ? 'saved' : 'idle');
+  }
+  deliverFile(rec);
+}
+$('#rAttach').on('click', '.attach-chip', function () { openAttachment(state.openMail, Number(this.dataset.n), this); });
+
+let prefetching = false;
+async function prefetchFiles() { // small files of the newest inbox mail are fetched after a sync, so they open offline
+  if (prefetching || !navigator.onLine || (navigator.connection && navigator.connection.saveData)) return;
+  prefetching = true;
+  try {
+    let budget = 8; // per sync, so a first load on a new device fills in over a few syncs
+    for (const m of await store.list('inbox', 15)) {
+      if (!(m.attachments || []).length) continue;
+      const have = new Set(await fileStore.saved(m.id));
+      for (let n = 0; n < m.attachments.length && budget > 0; n++) {
+        const a = m.attachments[n];
+        if (!a.size || a.size > AUTO_FILE_MAX || have.has(n) || noFile.has(m.id + ':' + n)) continue;
+        budget--;
+        try { await fetchFile(m, n, a, 'inbox'); } catch (e) { if (e.status === 404) noFile.add(m.id + ':' + n); else throw e; }
+      }
+    }
+  } catch (e) { /* tried again on the next sync */ }
+  prefetching = false;
+}
+
 function renderReader(m) {
   const trash = state.folder === 'trash'; const inbox = state.folder === 'inbox';
   const sent = state.folder === 'sent' || (trash && m.origin === 'sent');
@@ -610,7 +783,8 @@ function renderReader(m) {
   $('#btnDelTop').attr({ title: trash ? 'Delete forever' : 'Move to Bin', 'aria-label': trash ? 'Delete forever' : 'Move to Bin' });
   const rUrl = resendUrl(m, sent ? 'sent' : state.folder);
   $('#mnResend').toggleClass('d-none', !rUrl).attr('href', rUrl || '#');
-  $('#rAttach').html((m.attachments || []).map((a) => `<span class="attach-chip"><i class="ri-attachment-2"></i> ${esc(a.filename)}${a.size ? ' (' + fmtSize(a.size) + ')' : ''}</span>`).join(''));
+  $('#rAttach').html(attachChips(m));
+  if ((m.attachments || []).length) markSavedFiles(m);
   renderBody(m);
   mc.update();
 }
@@ -895,6 +1069,7 @@ async function deleteMail(id) { // id: a row swiped in the list; none: the messa
     await api(`/api/mails/${encodeURIComponent(m.id)}?folder=${folder}`, { method: 'DELETE' });
   } catch (e) { return toast(e.message); }
   await store.remove(folder, m.id);
+  if (hard) fileStore.removeMail(m.id).catch(() => {}); // deleted forever: its saved attachments go too
   if (meta[folder].total) meta[folder].total -= 1;
   await saveMeta(folder);
   if (folder === 'inbox') {
@@ -932,7 +1107,7 @@ async function emptyBin() {
   if (!navigator.onLine) return toast('Go online to empty the Bin.');
   if (!(await askConfirm({ title: 'Empty Bin?', message: 'Everything in the Bin is deleted forever.', ok: 'Empty Bin', danger: true }))) return;
   try { await api('/api/trash', { method: 'DELETE' }); } catch (e) { return toast(e.message); }
-  for (const r of await store.list('trash', 100000)) await store.remove('trash', r.id);
+  for (const r of await store.list('trash', 100000)) { await store.remove('trash', r.id); await fileStore.removeMail(r.id).catch(() => {}); }
   meta.trash = {}; await saveMeta('trash');
   hideReader(); await showFolder(); toast('Bin emptied');
 }

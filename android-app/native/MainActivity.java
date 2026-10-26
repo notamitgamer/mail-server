@@ -502,6 +502,47 @@ public class MainActivity extends BridgeActivity {
       runOnUiThread(() -> MainActivity.this.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u))));
     }
 
+    /**
+     * Saves an attachment (base64) into the Downloads folder and offers to open it. A WebView cannot download a
+     * blob itself. Needs Android 10+ (no storage permission is required there); returns false otherwise.
+     */
+    @JavascriptInterface
+    public boolean saveFile(String name, String mime, String base64) {
+      if (Build.VERSION.SDK_INT < 29 || base64 == null) return false;
+      try {
+        String safe = (name == null ? "" : name).replaceAll("[\\\\/:*?\"<>|\\r\\n]", "_").trim();
+        if (safe.isEmpty()) safe = "attachment";
+        final String type = (mime == null || mime.isEmpty()) ? "application/octet-stream" : mime;
+        byte[] data = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+        android.content.ContentResolver cr = MainActivity.this.getContentResolver();
+        android.content.ContentValues v = new android.content.ContentValues();
+        v.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, safe);
+        v.put(android.provider.MediaStore.Downloads.MIME_TYPE, type);
+        v.put(android.provider.MediaStore.Downloads.IS_PENDING, 1);
+        final Uri uri = cr.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+        if (uri == null) return false;
+        try (java.io.OutputStream os = cr.openOutputStream(uri)) {
+          if (os == null) return false;
+          os.write(data);
+        }
+        v.clear();
+        v.put(android.provider.MediaStore.Downloads.IS_PENDING, 0);
+        cr.update(uri, v, null, null);
+        if (!"application/vnd.android.package-archive".equals(type)) { // never launch an installer from a mail
+          runOnUiThread(() -> {
+            try {
+              MainActivity.this.startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(uri, type)
+                  .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception ignored) { // no app can open it: it is still in Downloads
+            }
+          });
+        }
+        return true;
+      } catch (Exception e) {
+        return false;
+      }
+    }
+
     /** Clear notification badges when inbox has no unread messages. */
     @JavascriptInterface
     public void setUnread(int n) {
