@@ -26,6 +26,7 @@ import android.webkit.JavascriptInterface;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.activity.OnBackPressedCallback;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.graphics.PathParser;
 import com.getcapacitor.BridgeActivity;
@@ -60,6 +61,19 @@ public class MainActivity extends BridgeActivity {
     getWindow().setAttributes(lp);
 
     getBridge().getWebView().addJavascriptInterface(new Native(), "MailNative");
+
+    // Capacitor core has no back handling without @capacitor/app, so back used to close the app from anywhere.
+    // Ask the web app to close its top layer (mail view / sidebar); leave the app only when nothing is open.
+    getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+      @Override
+      public void handleOnBackPressed() {
+        getBridge().getWebView().evaluateJavascript(
+            "(window.__layerBack&&window.__layerBack())===true",
+            v -> {
+              if (!"true".equals(v)) finish();
+            });
+      }
+    });
     handleIntent(getIntent());
     showSplash();
   }

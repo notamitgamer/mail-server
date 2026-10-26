@@ -1,6 +1,6 @@
 // Service worker: keeps the app itself (shell + Firebase sign-in code) available offline.
 // Your mail is NOT stored here; app.js keeps it in IndexedDB. Bump CACHE when shipping changes to cached files.
-const CACHE = 'mail-shell-v24';
+const CACHE = 'mail-shell-v25';
 const SHELL = [
   '/privacy',
   '/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png',

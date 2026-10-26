@@ -475,6 +475,13 @@ window.addEventListener('popstate', () => {
   if (!name || name === 'side') $('body').removeClass('sidebar-show');
 });
 
+// Called by the Android app (MainActivity) on the system back button: closes the top layer, returns false if none is open.
+window.__layerBack = () => {
+  if (!layers.length) return false;
+  closeLayer(layers[layers.length - 1]);
+  return true;
+};
+
 function showReader() {
   $('.mailcontent-placeholder').addClass('d-none').siblings().removeClass('d-none');
   if (window.matchMedia('(max-width: 1199px)').matches && !$('body').hasClass('mailcontent-show')) {
