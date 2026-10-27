@@ -1088,7 +1088,12 @@ app.get("/demo", (req, res) => res.sendFile(path.join(__dirname, "public", "demo
 
 // Proxy Firebase Auth handler to the underlying Firebase app domain
 app.get("/__/auth/*", async (req, res) => {
-  const targetUrl = "https://mail-server-notamitgamer.firebaseapp.com" + req.originalUrl;
+  // authDomain in FIREBASE_WEB_CONFIG may be this site's own (custom) domain, so the upstream
+  // Firebase handler is derived from projectId: https://<projectId>.firebaseapp.com
+  let projectId = '';
+  try { projectId = String((JSON.parse(process.env.FIREBASE_WEB_CONFIG || 'null') || {}).projectId || '').trim(); } catch (err) { /* ignore */ }
+  if (!/^[a-z0-9-]+$/i.test(projectId)) return res.status(404).send("Auth proxy not configured");
+  const targetUrl = "https://" + projectId + ".firebaseapp.com" + req.originalUrl;
   try {
     const upstream = await fetch(targetUrl);
     res.status(upstream.status);
