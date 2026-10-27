@@ -1455,7 +1455,7 @@ async function checkUpdate() {
   let st = {}; try { st = JSON.parse(localStorage.getItem('mb_upd') || '{}'); } catch (e) { /* none */ }
   if (Date.now() - (st.t || 0) < 6 * 3600 * 1000) return;
   try {
-    const r = await fetch('https://api.github.com/repos/notamitgamer/mail-server/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+    const r = await fetch('https://api.github.com/repos/notamitgamer/mailbox/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
     if (!r.ok) return;
     const rel = await r.json();
     const m = /versionCode:\s*(\d+)/.exec(rel.body || '') || /android-build-(\d+)/.exec(rel.tag_name || '');
@@ -1739,7 +1739,7 @@ $(document).on('keydown', (e) => {
 });
 
 // ---- build info: the commit this code was built from, and the commit the server runs now ----
-const BUILD_LOADED = typeof __BUILD__ !== 'undefined' ? __BUILD__ : { commit: '', repo: 'notamitgamer/mail-server', branch: '' };
+const BUILD_LOADED = typeof __BUILD__ !== 'undefined' ? __BUILD__ : { commit: '', repo: 'notamitgamer/mailbox', branch: '' };
 let buildLive = null;
 function paintBuild(offline) {
   const b = BUILD_LOADED.commit ? BUILD_LOADED : (buildLive || BUILD_LOADED);

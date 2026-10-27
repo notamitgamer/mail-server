@@ -1057,11 +1057,11 @@ app.get('/ping', (req, res) => {
 // Which commit is running. Render sets RENDER_GIT_COMMIT / RENDER_GIT_BRANCH / RENDER_GIT_REPO_SLUG on every deploy.
 const BUILD = (() => {
   const commit = (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').trim();
-  const repo = (process.env.RENDER_GIT_REPO_SLUG || 'notamitgamer/mail-server').trim();
+  const repo = (process.env.RENDER_GIT_REPO_SLUG || 'notamitgamer/mailbox').trim();
   const branch = (process.env.RENDER_GIT_BRANCH || '').trim();
   return {
     commit: /^[0-9a-f]{7,40}$/i.test(commit) ? commit.toLowerCase() : '',
-    repo: /^[\w.-]+\/[\w.-]+$/.test(repo) ? repo : 'notamitgamer/mail-server',
+    repo: /^[\w.-]+\/[\w.-]+$/.test(repo) ? repo : 'notamitgamer/mailbox',
     branch: /^[\w./-]{1,100}$/.test(branch) ? branch : '',
   };
 })();

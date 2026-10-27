@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo.png" alt="mail-server logo" width="120">
+  <img src="assets/logo.png" alt="Mailbox logo" width="120">
 </p>
 
-<h1 align="center">mail-server</h1>
+<h1 align="center">Mailbox</h1>
 
 <p align="center">
   A small, self-hosted mailbox for your own domain, with push notifications.
@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-d0bcff?labelColor=141316"></a>
   <img alt="Node.js 18 or newer" src="https://img.shields.io/badge/node-%3E%3D18-d0bcff?labelColor=141316">
-  <a href="https://docs.amit.is-a.dev/mail-server"><img alt="Documentation" src="https://img.shields.io/badge/docs-read-d0bcff?labelColor=141316"></a>
+  <a href="https://docs.amit.is-a.dev/mailbox"><img alt="Documentation" src="https://img.shields.io/badge/docs-read-d0bcff?labelColor=141316"></a>
 </p>
 
 [Resend](https://resend.com) receives the mail, the server stores it in [Firebase Firestore](https://firebase.google.com/docs/firestore), and an installable web app lets you read, reply, forward and send, with push notifications for new mail. Nothing is forwarded to a third-party inbox.
@@ -55,8 +55,8 @@ Shown with made-up demo mail.
 You need a domain on Resend with inbound mail enabled, a Firebase project (Firestore and Google sign-in) and Node.js 18 or newer.
 
 ```bash
-git clone https://github.com/notamitgamer/mail-server.git
-cd mail-server
+git clone https://github.com/notamitgamer/mailbox.git
+cd mailbox
 npm install
 cp .env.example .env     # then fill in the values
 node --env-file=.env server.js   # Node 20.6+; or export the variables and run: npm start
@@ -71,7 +71,7 @@ A signed APK built from `android-app/` (a thin [Capacitor](https://capacitorjs.c
 ## Documentation
 
 Step-by-step setup, every environment variable, usage and the API reference live in the docs:
-**https://docs.amit.is-a.dev/mail-server**
+**https://docs.amit.is-a.dev/mailbox**
 
 ## Contributing and security
 

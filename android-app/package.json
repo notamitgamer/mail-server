@@ -1,8 +1,8 @@
 {
-  "name": "mail-server-android",
+  "name": "mailbox-android",
   "private": true,
   "version": "1.0.0",
-  "description": "Android app shell for mail-server (Capacitor, FCM push, native Google sign-in)",
+  "description": "Android app shell for Mailbox (Capacitor, FCM push, native Google sign-in)",
   "license": "MIT",
   "dependencies": {
     "@capacitor/android": "^6.2.0",
