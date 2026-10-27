@@ -9,6 +9,8 @@ app = ('<service android:name=".MailMessagingService" android:exported="false">'
        '<service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" tools:node="remove"/>'
        '<receiver android:name=".MailActionReceiver" android:exported="false"/>')
 s = s.replace('</application>', app + '</application>', 1)
+# Android 9 and older need this to save an attachment into Downloads (newer versions do not use it).
+s = s.replace('<application', '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/><application', 1)
 flt = ('<intent-filter><action android:name="android.intent.action.SENDTO"/><category android:name="android.intent.category.DEFAULT"/>'
        '<category android:name="android.intent.category.BROWSABLE"/><data android:scheme="mailto"/></intent-filter>'
        '<intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/>'
@@ -16,5 +18,5 @@ flt = ('<intent-filter><action android:name="android.intent.action.SENDTO"/><cat
        '<intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/>'
        '<data android:mimeType="text/plain"/></intent-filter>')
 s = s.replace('</activity>', flt + '</activity>', 1)
-assert 'MailMessagingService' in s and 'mailto' in s
+assert 'MailMessagingService' in s and 'mailto' in s and 'WRITE_EXTERNAL_STORAGE' in s
 open(p, 'w', encoding='utf-8').write(s)

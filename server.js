@@ -209,8 +209,66 @@ const deleteAttachments = async (mailIds) => {
     }
   }
 };
-// ids of the mails in a query result that have files (the query must select 'attachments')
-const withFiles = (snap) => snap.docs.filter((d) => (d.get('attachments') || []).length).map((d) => d.id);
+// Who owns the stored bytes of a mail: a received mail owns its own (keyed by its id); a draft or sent mail
+// owns one upload per file (`fid`), which stays the same when a draft becomes the sent mail.
+const attOwners = (id, d) => [...new Set(((d && d.attachments) || []).map((a) => (a && a.fid) || id))];
+// owners of every mail in a query result (the query must select 'attachments')
+const ownersOf = (snap) => [...new Set(snap.docs.flatMap((d) => attOwners(d.id, d.data())))];
+
+// Files you attach while writing are uploaded first (POST /api/uploads) and wait as "pending" (an `uploads`
+// document) until a draft or a sent mail takes them over. Pending files nobody took are swept after a day.
+const FID_RE = /^up-[a-f0-9]{30}$/;
+const MAX_FILES = 10;
+const newFid = () => 'up-' + crypto.randomBytes(15).toString('hex');
+const cleanName = (v) => String(v || '').replace(/[\\/:*?"<>|\r\n\0]+/g, '_').trim().slice(0, 150) || 'attachment';
+
+// The attachment list a draft or sent mail ends up with. `refs` is what the app sent ([{ fid }]), `prev` the list
+// the saved draft already had. Returns the files, the pending uploads this takes over (`claim`) and the files
+// that were dropped (`removed`). Without a list from the app (an older client) the saved one is kept as it is.
+const resolveFiles = async (refs, prev = []) => {
+  if (!Array.isArray(refs)) return { files: prev, claim: [], removed: [] };
+  const files = []; const claim = []; let total = 0;
+  for (const r of refs) {
+    const fid = String((r && r.fid) || '');
+    if (!FID_RE.test(fid) || files.some((f) => f.fid === fid)) continue;
+    let info = prev.find((p) => p && p.fid === fid);
+    if (!info) {
+      const u = await db.collection('uploads').doc(fid).get();
+      if (!u.exists) return { error: 'An attached file expired. Attach it again.', status: 400 };
+      info = u.data(); claim.push(fid);
+    }
+    total += Number(info.size) || 0;
+    files.push({ fid, filename: cleanName(info.filename), contentType: info.contentType || null, size: Number(info.size) || 0 });
+  }
+  if (files.length > MAX_FILES) return { error: `At most ${MAX_FILES} attachments`, status: 400 };
+  if (total > MAX_ATT_TOTAL) return { error: 'Attachments are over 25 MB in total', status: 413 };
+  const removed = prev.filter((p) => p && p.fid && !files.some((f) => f.fid === p.fid)).map((p) => p.fid);
+  return { files, claim, removed };
+};
+// After the draft or mail is saved: the pending marks go, and files that were taken off are deleted.
+const settleFiles = async (r) => {
+  await Promise.all(r.claim.map((fid) => db.collection('uploads').doc(fid).delete().catch(() => {})));
+  if (r.removed.length) await deleteAttachments(r.removed).catch((e) => console.error('deleteAttachments', e.message));
+};
+
+// Bytes of attachment `n` of a saved mail, or null. A received mail from before files were kept (or whose saving
+// failed) is fetched from Resend again, and kept from then on.
+const getAttachmentBytes = async (id, d, folder, n) => {
+  const info = (d.attachments || [])[n];
+  if (!info) return null;
+  let buf = await readAttachment(info.fid || id, info.fid ? 0 : n);
+  const received = folder === 'inbox' || (folder === 'trash' && d.origin !== 'sent');
+  if (!buf && !info.fid && received) {
+    try {
+      const a = (await fetchFullEmail(id)).attachments?.[n];
+      if (a && Buffer.isBuffer(a.content) && (a.filename || 'attachment') === info.filename) {
+        buf = a.content;
+        if (buf.length <= MAX_ATT_BYTES) storeAttachment(id, n, buf).catch((e) => console.error('Attachment not stored:', e.message));
+      }
+    } catch (err) { console.error('Attachment fetch failed:', err.message); }
+  }
+  return buf;
+};
 
 // ---- Push delivery ----------------------------------------------------------
 const pushHash = (endpoint) => crypto.createHash('sha256').update(endpoint).digest('hex');
@@ -355,8 +413,12 @@ app.post('/api/incoming', express.text({ type: 'application/json' }), async (req
       receivedAt,
       parsed,
     });
-    // Keep the attachment files before notifying, so the first tap on the notification can already download them.
-    if (saved && parsed?.attachments?.length) await storeAttachments(emailData.email_id, parsed.attachments);
+    // Keep the attachment files in the background: a big mail would hold this request open until Resend gives up
+    // and retries (and a retry skips everything, because the mail already exists). If someone opens a file before
+    // it is stored, the download endpoint fetches it from Resend again.
+    if (saved && parsed?.attachments?.length) {
+      storeAttachments(emailData.email_id, parsed.attachments).catch((err) => console.error('Attachments not stored:', err.message));
+    }
     // Push only for a mail that was newly saved, so a webhook retry does not notify twice.
     if (saved) await sendPush({ emailId: emailData.email_id, from: originalSender, subject, snippet: makeSnippet(parsed), doc: saved });
     return res.status(200).json({ success: true });
@@ -450,10 +512,25 @@ async function purgeTrash() {
   const batch = db.batch();
   snap.docs.forEach((d) => batch.delete(d.ref));
   await batch.commit();
-  await deleteAttachments(withFiles(snap)).catch((e) => console.error('deleteAttachments', e.message));
+  await deleteAttachments(ownersOf(snap)).catch((e) => console.error('deleteAttachments', e.message));
   return snap.size;
 }
-if (db) setInterval(() => purgeTrash().catch((e) => console.error('purgeTrash', e)), 6 * 3600000).unref();
+// Files that were uploaded for a message but never ended up in a draft or a sent mail (the page was closed first).
+async function purgeUploads() {
+  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 24 * 3600000);
+  const snap = await db.collection('uploads').where('createdAt', '<', cutoff).limit(100).get();
+  for (const d of snap.docs) {
+    await deleteAttachments([d.id]);
+    await d.ref.delete();
+  }
+  return snap.size;
+}
+if (db) {
+  setInterval(() => {
+    purgeTrash().catch((e) => console.error('purgeTrash', e));
+    purgeUploads().catch((e) => console.error('purgeUploads', e));
+  }, 6 * 3600000).unref();
+}
 
 app.get('/api/mails', requireOwner, handle(async (req, res) => {
   const folder = folderOf(req);
@@ -499,17 +576,7 @@ app.get('/api/mails/:id/attachments/:n', requireOwner, handle(async (req, res) =
   const info = snap.exists ? (snap.data().attachments || [])[n] : null;
   if (!info) return res.status(404).json({ error: 'Not found' });
 
-  let buf = await readAttachment(req.params.id, n);
-  const received = folder === 'inbox' || (folder === 'trash' && snap.data().origin !== 'sent');
-  if (!buf && received) { // a mail from before files were kept, or saving them failed: fetch it from Resend again
-    try {
-      const a = (await fetchFullEmail(req.params.id)).attachments?.[n];
-      if (a && Buffer.isBuffer(a.content) && (a.filename || 'attachment') === info.filename) {
-        buf = a.content;
-        if (buf.length <= MAX_ATT_BYTES) storeAttachment(req.params.id, n, buf).catch((e) => console.error('Attachment not stored:', e.message));
-      }
-    } catch (err) { console.error('Attachment fetch failed:', err.message); }
-  }
+  const buf = await getAttachmentBytes(req.params.id, snap.data(), folder, n);
   if (!buf) return res.status(404).json({ error: 'This attachment is no longer available' });
   const name = encodeURIComponent(info.filename || 'attachment').replace(/['()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
   return res.set({
@@ -519,6 +586,52 @@ app.get('/api/mails/:id/attachments/:n', requireOwner, handle(async (req, res) =
     'X-Content-Type-Options': 'nosniff',
     'Cache-Control': 'private, no-store',
   }).send(buf);
+}));
+
+// A file the owner attaches while writing: the raw bytes are the request body, the name and type are in the query.
+// It waits as "pending" until a draft or a sent mail takes it over (see resolveFiles).
+const uploadsFull = async () => (await db.collection('uploads').count().get()).data().count >= 40;
+const makePending = async (buf, name, type) => {
+  const fid = newFid();
+  const info = { filename: cleanName(name), contentType: safeMime(type), size: buf.length };
+  await storeAttachment(fid, 0, buf);
+  await db.collection('uploads').doc(fid).set({ ...info, createdAt: admin.firestore.Timestamp.now() });
+  return { fid, ...info };
+};
+app.post('/api/uploads', requireOwner, express.raw({ type: () => true, limit: MAX_ATT_BYTES + 1024 }), handle(async (req, res) => {
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: 'The file is empty' });
+  if (buf.length > MAX_ATT_BYTES) return res.status(413).json({ error: 'Files can be at most 15 MB' });
+  if (await uploadsFull()) return res.status(429).json({ error: 'Too many files waiting. Send or discard a message first.' });
+  return res.json({ ok: true, ...(await makePending(buf, req.query.name, req.query.type)) });
+}));
+
+// Copies a file of a saved mail into a new pending upload, so it can go into a message being written
+// ("Edit & forward"). The original stays as it is.
+app.post('/api/mails/:id/attachments/:n/copy', requireOwner, handle(async (req, res) => {
+  const n = Number(req.params.n);
+  if (!ID_RE.test(req.params.id) || !Number.isInteger(n) || n < 0 || n > 99) return res.status(400).json({ error: 'Bad request' });
+  const folder = folderOf(req);
+  if (folder === 'drafts') return res.status(404).json({ error: 'Not found' });
+  const snap = await db.collection(FOLDERS[folder].collection).doc(req.params.id).get();
+  const info = snap.exists ? (snap.data().attachments || [])[n] : null;
+  if (!info) return res.status(404).json({ error: 'Not found' });
+  if (await uploadsFull()) return res.status(429).json({ error: 'Too many files waiting. Send or discard a message first.' });
+  const buf = await getAttachmentBytes(req.params.id, snap.data(), folder, n);
+  if (!buf) return res.status(404).json({ error: 'This attachment is no longer available' });
+  return res.json({ ok: true, ...(await makePending(buf, info.filename, info.contentType)) });
+}));
+
+// Drops a file that was attached but is no longer wanted. Only touches files nobody has taken over yet; a file
+// that is part of a draft is removed when the draft is saved without it.
+app.delete('/api/uploads/:fid', requireOwner, handle(async (req, res) => {
+  if (!FID_RE.test(req.params.fid)) return res.status(400).json({ error: 'Bad id' });
+  const ref = db.collection('uploads').doc(req.params.fid);
+  if ((await ref.get()).exists) {
+    await deleteAttachments([req.params.fid]);
+    await ref.delete();
+  }
+  return res.json({ ok: true });
 }));
 
 // Incremental sync for the offline cache. Full messages, so the app can show them without the network.
@@ -600,8 +713,9 @@ app.delete('/api/mails/:id', requireOwner, handle(async (req, res) => {
     }
     return res.json({ ok: true, trashed: true });
   }
+  const old = await ref.get();
   await ref.delete(); // deleting a missing doc is fine
-  if (folder === 'trash') await deleteAttachments([req.params.id]).catch((e) => console.error('deleteAttachments', e.message));
+  if (old.exists) await deleteAttachments(attOwners(old.id, old.data())).catch((e) => console.error('deleteAttachments', e.message));
   return res.json({ ok: true });
 }));
 
@@ -627,7 +741,7 @@ app.delete('/api/trash', requireOwner, handle(async (req, res) => {
     const batch = db.batch();
     snap.docs.forEach((d) => batch.delete(d.ref));
     await batch.commit();
-    await deleteAttachments(withFiles(snap)).catch((e) => console.error('deleteAttachments', e.message));
+    await deleteAttachments(ownersOf(snap)).catch((e) => console.error('deleteAttachments', e.message));
     deleted += snap.size;
   }
   return res.json({ ok: true, deleted });
@@ -648,19 +762,24 @@ app.post('/api/drafts', requireOwner, express.json({ limit: '1mb' }), handle(asy
     subject: String(b.subject || '').replace(/[\r\n]+/g, ' ').slice(0, 500),
     text, html: null, templateHtml, templateName: String(b.templateName || '').slice(0, 80), htmlMode: Boolean(b.htmlMode),
     replyToId: b.replyToId && ID_RE.test(b.replyToId) ? b.replyToId : null,
-    snippet: makeSnippet({ text: text || htmlToText(templateHtml) }),
-    attachments: [], read: true,
+    snippet: makeSnippet({ text: text || htmlToText(templateHtml) }), // the preview line in the Drafts list
+    read: true,
     updatedAt: admin.firestore.Timestamp.now(),
   };
+  let ref = null; let prev = [];
   if (b.id !== undefined && b.id !== null && b.id !== '') {
     if (!ID_RE.test(String(b.id))) return res.status(400).json({ error: 'Bad id' });
-    const ref = db.collection('drafts').doc(String(b.id));
-    if (!(await ref.get()).exists) return res.status(404).json({ error: 'Draft not found' }); // sent or discarded meanwhile
-    await ref.set(doc);
-    return res.json({ ok: true, id: ref.id });
+    ref = db.collection('drafts').doc(String(b.id));
+    const old = await ref.get();
+    if (!old.exists) return res.status(404).json({ error: 'Draft not found' }); // sent or discarded meanwhile
+    prev = old.data().attachments || [];
   }
-  const ref = await db.collection('drafts').add(doc);
-  return res.json({ ok: true, id: ref.id });
+  const fr = await resolveFiles(b.attachments, prev);
+  if (fr.error) return res.status(fr.status).json({ error: fr.error });
+  doc.attachments = fr.files;
+  if (ref) await ref.set(doc); else ref = await db.collection('drafts').add(doc);
+  await settleFiles(fr);
+  return res.json({ ok: true, id: ref.id, attachments: fr.files });
 }));
 
 // ---- templates: reusable HTML blocks (signature, footer...) the composer offers to add ----
@@ -708,7 +827,7 @@ app.post('/api/send', requireOwner, express.json({ limit: '2mb' }), handle(async
   while (sendLog.length && now - sendLog[0] > 3600000) sendLog.shift();
   if (sendLog.length >= 50) return res.status(429).json({ error: 'Hourly send limit reached' });
 
-  const { to, cc, bcc, subject, html, text, replyToId, from, draftId } = req.body || {};
+  const { to, cc, bcc, subject, html, text, replyToId, from, draftId, attachments } = req.body || {};
   const recipients = addrList(to); const ccList = addrList(cc); const bccList = addrList(bcc);
   const everyone = [...recipients, ...ccList, ...bccList];
   if (!recipients.length || everyone.length > MAX_RECIPIENTS || !everyone.every((a) => EMAIL_RE.test(a))) {
@@ -730,6 +849,23 @@ app.post('/api/send', requireOwner, express.json({ limit: '2mb' }), handle(async
     subject: String(subject || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 500) || '(no subject)',
   };
   if (html) { payload.html = String(html); payload.text = text ? String(text) : htmlToText(html); } else { payload.text = String(text); }
+
+  // Attached files: those picked while writing (uploaded earlier), plus whatever the draft already had.
+  let prevFiles = [];
+  if (draftId && ID_RE.test(String(draftId))) {
+    const ds = await db.collection('drafts').doc(String(draftId)).get();
+    if (ds.exists) prevFiles = ds.data().attachments || [];
+  }
+  const fr = await resolveFiles(attachments, prevFiles);
+  if (fr.error) return res.status(fr.status).json({ error: fr.error });
+  if (fr.files.length) {
+    payload.attachments = [];
+    for (const f of fr.files) {
+      const content = await readAttachment(f.fid, 0);
+      if (!content) return res.status(400).json({ error: `"${f.filename}" is missing. Attach it again.` });
+      payload.attachments.push({ filename: f.filename, content, ...(f.contentType ? { contentType: f.contentType } : {}) });
+    }
+  }
 
   // Replies keep the conversation threaded in the recipient's mail app.
   let inReplyTo = null;
@@ -760,14 +896,15 @@ app.post('/api/send', requireOwner, express.json({ limit: '2mb' }), handle(async
     sentAt: admin.firestore.Timestamp.fromDate(new Date()),
     resendId: data?.id || null,
     inReplyTo,
-    attachments: [],
+    attachments: fr.files, // the stored files now belong to this sent mail
   });
-  if (draftId && ID_RE.test(String(draftId))) await db.collection('drafts').doc(String(draftId)).delete().catch(() => {}); // the draft became this mail
+  await settleFiles(fr);
+  if (draftId && ID_RE.test(String(draftId))) await db.collection('drafts').doc(String(draftId)).delete().catch(() => {}); // the draft became this mail (its files moved with it)
   return res.json({ ok: true, id: ref.id });
 }));
 
 // Forwards a saved message to the given address(es) as it is (no editing), then files a copy under Sent.
-// Attachments are not stored with the message, so they are not forwarded.
+// Its attachments go along, as far as the files were kept (see MAX_ATT_BYTES); `skipped` counts the ones that were not.
 app.post('/api/mails/:id/forward', requireOwner, express.json({ limit: '10kb' }), handle(async (req, res) => {
   if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
   const now = Date.now();
@@ -800,24 +937,48 @@ app.post('/api/mails/:id/forward', requireOwner, express.json({ limit: '10kb' })
   const fromAddress = [].concat(d.to || []).map((a) => String(a).toLowerCase()).find((a) => SEND_ALIASES.includes(a)) || SEND_ALIASES[0];
   if (!fromAddress) return res.status(500).json({ error: 'No sender address configured (ALLOWED_ALIASES)' });
 
+  // The files of the original, as far as we hold them and they fit (10 files, 25 MB).
+  const files = []; let skipped = 0; let total = 0;
+  const all = d.attachments || [];
+  for (let n = 0; n < all.length; n++) {
+    const buf = files.length < MAX_FILES ? await getAttachmentBytes(snap.id, d, folder, n) : null;
+    if (!buf || total + buf.length > MAX_ATT_TOTAL) { skipped++; continue; }
+    total += buf.length;
+    files.push({ info: all[n], buf });
+  }
+
   const payload = {
     from: FROM_NAME ? `"${FROM_NAME}" <${fromAddress}>` : fromAddress,
     to: recipients,
     subject: (/^fwd?:/i.test(subject) ? subject : 'Fwd: ' + subject).slice(0, 500),
     html, text,
   };
+  if (files.length) {
+    payload.attachments = files.map(({ info, buf }) => ({
+      filename: cleanName(info.filename), content: buf, ...(info.contentType ? { contentType: info.contentType } : {}),
+    }));
+  }
   const { data, error } = await resend.emails.send(payload);
   if (error) {
     console.error(error);
     return res.status(502).json({ error: error.message || 'Forward failed' });
   }
   sendLog.push(now);
+  // The Sent copy gets its own copy of the bytes, so deleting either mail never takes the other one's files.
+  const kept = [];
+  for (const { info, buf } of files) {
+    const fid = newFid();
+    try {
+      await storeAttachment(fid, 0, buf);
+      kept.push({ fid, filename: cleanName(info.filename), contentType: info.contentType || null, size: buf.length });
+    } catch (err) { console.error('Attachment not stored:', err.message); }
+  }
   const ref = await db.collection('sent').add({
     from: fromAddress, to: recipients, subject: payload.subject, html, text,
     snippet: makeSnippet({ text }), sentAt: admin.firestore.Timestamp.fromDate(new Date()),
-    resendId: data?.id || null, inReplyTo: null, attachments: [],
+    resendId: data?.id || null, inReplyTo: null, attachments: kept,
   });
-  return res.json({ ok: true, id: ref.id });
+  return res.json({ ok: true, id: ref.id, skipped });
 }));
 
 // Read one inbox mail with the token from its push. Not behind sign-in on purpose: the service worker has no

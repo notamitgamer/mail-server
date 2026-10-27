@@ -213,22 +213,30 @@ const fileStore = {
   },
   async put(rec) { // { key, mailId, n, name, type, size, ts, buf }
     const d = await fdb;
-    if (!d) { memFiles.set(rec.key, rec); return; }
+    if (!d) { memFiles.set(rec.key, rec); refreshStorage(); return; }
     const { buf, ...info } = rec;
     const t = d.transaction(['files', 'blobs'], 'readwrite');
     t.objectStore('files').put(info); t.objectStore('blobs').put(buf, rec.key);
     await txDone(t);
     await fileStore.trim().catch(() => {});
+    refreshStorage();
   },
   async removeMail(mailId) {
     memFiles.forEach((f, k) => { if (f.mailId === mailId) memFiles.delete(k); });
     const d = await fdb;
-    if (!d) return;
+    if (!d) { refreshStorage(); return; }
     const keys = await req2p(d.transaction('files').objectStore('files').index('byMail').getAllKeys(mailId));
     if (!keys.length) return;
     const t = d.transaction(['files', 'blobs'], 'readwrite');
     keys.forEach((k) => { t.objectStore('files').delete(k); t.objectStore('blobs').delete(k); });
-    return txDone(t);
+    await txDone(t);
+    refreshStorage();
+  },
+  async stats() { // how many files are saved and how much space they take
+    const d = await fdb;
+    if (!d) { let bytes = 0; memFiles.forEach((f) => { bytes += f.size; }); return { count: memFiles.size, bytes }; }
+    const all = await req2p(d.transaction('files').objectStore('files').getAll());
+    return { count: all.length, bytes: all.reduce((s, f) => s + (f.size || 0), 0) };
   },
   async trim() { // keep the total under FILE_CACHE_MAX, oldest first
     const d = await fdb;
@@ -246,12 +254,28 @@ const fileStore = {
   async clear() {
     memFiles.clear();
     const d = await fdb;
-    if (!d) return;
+    if (!d) { refreshStorage(); return; }
     const t = d.transaction(['files', 'blobs'], 'readwrite');
     t.objectStore('files').clear(); t.objectStore('blobs').clear();
-    return txDone(t);
+    await txDone(t);
+    refreshStorage();
   },
 };
+
+// Left pane: how much space saved files take, a way to clear them, and the switch for background downloads.
+const AUTO_KEY = 'mb_autofiles';
+const autoFiles = () => { try { return localStorage.getItem(AUTO_KEY) !== '0'; } catch (e) { return true; } };
+let storageTimer = null;
+function refreshStorage() { clearTimeout(storageTimer); storageTimer = setTimeout(() => renderStorage().catch(() => {}), 250); }
+async function renderStorage() {
+  const s = await fileStore.stats();
+  $('#storageText').text(s.count ? `${s.count} file${s.count === 1 ? '' : 's'} · ${fmtSize(s.bytes)}` : 'None saved');
+  const pct = Math.min(100, (s.bytes / FILE_CACHE_MAX) * 100);
+  $('#storageFill').css('width', (s.bytes ? Math.max(2, pct) : 0) + '%');
+  $('.storage-bar').toggleClass('near', pct >= 85).attr('aria-valuenow', Math.round(pct));
+  $('#storageCap').text(`Up to ${fmtSize(FILE_CACHE_MAX)} on this device. Older files go first when it is full.`);
+  $('#storageClear').prop('disabled', !s.count);
+}
 
 // Per-folder sync cursor ({ newest, oldest, hasOlder } as ms timestamps) and app-level bits.
 const fresh = () => ({ inbox: {}, sent: {}, drafts: {}, trash: {}, app: { unread: 0, pendingRead: [], lastSync: 0 } });
@@ -280,7 +304,7 @@ async function api(path, opts = {}) {
   const token = await getToken();
   const res = await fetch(path, {
     ...opts,
-    headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), Authorization: 'Bearer ' + token },
+    headers: { ...(opts.body ? { 'Content-Type': opts.raw ? 'application/octet-stream' : 'application/json' } : {}), Authorization: 'Bearer ' + token },
   });
   if (res.ok && opts.binary) return res.arrayBuffer(); // a file, not JSON
   let data = null;
@@ -708,17 +732,38 @@ async function fetchFile(m, n, a, folder) {
 }
 
 function b64(buf) {
-  const u = new Uint8Array(buf); let s = '';
+  const u = buf instanceof Uint8Array ? buf : new Uint8Array(buf); let s = '';
   for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
   return btoa(s);
 }
-function deliverFile(rec) {
+const BRIDGE_CHUNK = 192 * 1024; // bytes per piece sent to the Android app
+const LEGACY_SAVE_MAX = 8 * 1024 * 1024; // the one-piece save (Android 9 and older) can't take more than this
+async function deliverFile(rec) {
   const N = window.MailNative;
   if (N) { // Android app: a WebView cannot download a blob, so the app saves it into Downloads and offers to open it
+    if (typeof N.beginFile === 'function') { // Android 10+: sent in pieces, so a big file never sits in memory as one string
+      let began = false;
+      try { began = N.beginFile(rec.name, rec.type); } catch (e) { /* falls back below */ }
+      if (began) {
+        const u = new Uint8Array(rec.buf); let ok = true;
+        try {
+          for (let i = 0, k = 0; ok && i < u.length; i += BRIDGE_CHUNK, k++) {
+            ok = N.appendFile(b64(u.subarray(i, i + BRIDGE_CHUNK)));
+            if (k % 8 === 7) await new Promise((r) => setTimeout(r)); // let the screen breathe
+          }
+          ok = ok && N.endFile();
+        } catch (e) { ok = false; }
+        if (!ok) { try { N.abortFile(); } catch (e) { /* nothing to drop */ } }
+        return toast(ok ? 'Saved to Downloads' : 'Could not save this file.');
+      }
+    }
     if (typeof N.saveFile !== 'function') return toast('Update the app to download attachments.');
-    let ok = false;
-    try { ok = N.saveFile(rec.name, rec.type, b64(rec.buf)); } catch (e) { /* reported below */ }
-    return toast(ok ? 'Saved to Downloads' : 'Could not save this file.');
+    if (rec.buf.byteLength > LEGACY_SAVE_MAX) return toast('This file is too large to save on this version of Android.');
+    let r = '';
+    try { r = N.saveFile(rec.name, rec.type, b64(rec.buf)); } catch (e) { /* reported below */ }
+    // Android 9 and older ask for storage access first: the answer arrives later in window.__nativeSaved.
+    if (r === 'wait') return toast('Allow storage access to save the file.');
+    return toast(r === true || r === 'ok' ? 'Saved to Downloads' : 'Could not save this file.');
   }
   const preview = PREVIEWABLE.test(rec.type);
   const url = URL.createObjectURL(new Blob([rec.buf], { type: preview ? rec.type : 'application/octet-stream' }));
@@ -745,10 +790,27 @@ async function openAttachment(m, n, el) {
   deliverFile(rec);
 }
 $('#rAttach').on('click', '.attach-chip', function () { openAttachment(state.openMail, Number(this.dataset.n), this); });
+window.__nativeSaved = (ok) => toast(ok ? 'Saved to Downloads' : 'Could not save this file.'); // called by the Android app after it asked for storage access
+
+// storage panel in the left pane
+$('#storageAuto').prop('checked', autoFiles()).on('change', function () {
+  try { localStorage.setItem(AUTO_KEY, this.checked ? '1' : '0'); } catch (e) { /* kept for this session only */ }
+  if (this.checked) prefetchFiles();
+});
+$('#storageClear').on('click', async () => {
+  const s = await fileStore.stats().catch(() => ({ count: 0, bytes: 0 }));
+  if (!s.count) return;
+  if (!(await askConfirm({ title: 'Clear downloaded files?', message: `${s.count} file${s.count === 1 ? '' : 's'} (${fmtSize(s.bytes)}) will be removed from this device. Your mail stays, and a file downloads again when you open it.`, ok: 'Clear files', danger: true }))) return;
+  try { await fileStore.clear(); } catch (e) { return toast('Could not clear the files.'); }
+  $('#rAttach .attach-chip').each((i, el) => setChip(el, 'idle'));
+  renderStorage().catch(() => {});
+  toast('Downloaded files cleared');
+});
+renderStorage().catch(() => {});
 
 let prefetching = false;
 async function prefetchFiles() { // small files of the newest inbox mail are fetched after a sync, so they open offline
-  if (prefetching || !navigator.onLine || (navigator.connection && navigator.connection.saveData)) return;
+  if (prefetching || !autoFiles() || !navigator.onLine || (navigator.connection && navigator.connection.saveData)) return;
   prefetching = true;
   try {
     let budget = 8; // per sync, so a first load on a new device fills in over a few syncs
@@ -941,6 +1003,73 @@ async function offerTemplate() {
   $('#cTpl').removeClass('d-none');
 }
 
+// ---- files attached in the composer ----
+// A picked file is uploaded at once (so a draft only has to remember which files it has, not carry them), and
+// stays "pending" on the server until the draft or the sent mail takes it over.
+const MAX_FILE = 15 * 1024 * 1024; const MAX_TOTAL = 25 * 1024 * 1024; const MAX_FILES = 10;
+let cFiles = []; // { fid, filename, contentType, size }; while uploading: { tmp: true, filename, size }
+let composeSeq = 0; // changes whenever a message is opened or closed, so a loop still running for an old one stops
+function renderComposeFiles() {
+  $('#cAttach').toggleClass('d-none', !cFiles.length).html(cFiles.map((f, i) => `<span class="attach-chip compose-chip" data-i="${i}">`
+    + `<i class="${f.tmp ? 'ri-loader-4-line spin' : 'ri-attachment-2'}" aria-hidden="true"></i>`
+    + `<span class="attach-name">${esc(f.filename)}</span>${f.size ? `<span class="attach-size">${fmtSize(f.size)}</span>` : ''}`
+    + `<button type="button" class="attach-x" aria-label="Remove ${esc(f.filename)}"><i class="ri-close-line" aria-hidden="true"></i></button></span>`).join(''));
+}
+const dropUpload = (fid) => { if (fid && navigator.onLine) api(`/api/uploads/${fid}`, { method: 'DELETE' }).catch(() => {}); };
+// Puts a finished upload in place of its "uploading" chip. A chip that was removed (or whose message was closed)
+// in the meantime is not in the list any more, so its file is dropped again.
+function finishUpload(f, r) {
+  const at = cFiles.indexOf(f);
+  if (at < 0) return dropUpload(r.fid);
+  cFiles[at] = { fid: r.fid, filename: r.filename, contentType: r.contentType, size: r.size };
+  renderComposeFiles(); queueDraft();
+}
+function failUpload(f, e, fallback) {
+  const at = cFiles.indexOf(f);
+  if (at >= 0) { cFiles.splice(at, 1); renderComposeFiles(); }
+  toast(e.status === 413 ? 'That file is too large.' : (e.status ? e.message : fallback));
+}
+async function attachFiles(list) {
+  const picked = [...list];
+  if (!picked.length) return;
+  if (!navigator.onLine) return toast('Go online to attach files.');
+  const seq = composeSeq;
+  for (const file of picked) {
+    if (seq !== composeSeq) break; // the message was closed (or another one opened) meanwhile
+    if (cFiles.length >= MAX_FILES) { toast(`You can attach up to ${MAX_FILES} files.`); break; }
+    if (!file.size) { toast(`"${file.name}" is empty.`); continue; }
+    if (file.size > MAX_FILE) { toast(`"${file.name}" is over ${fmtSize(MAX_FILE)}.`); continue; }
+    if (cFiles.reduce((s, f) => s + f.size, 0) + file.size > MAX_TOTAL) { toast(`Attachments can be ${fmtSize(MAX_TOTAL)} in total.`); break; }
+    const f = { tmp: true, filename: file.name || 'attachment', size: file.size };
+    cFiles.push(f); renderComposeFiles();
+    try {
+      const r = await api(`/api/uploads?name=${encodeURIComponent(f.filename)}&type=${encodeURIComponent(file.type || '')}`, { method: 'POST', body: file, raw: true });
+      finishUpload(f, r);
+    } catch (e) { failUpload(f, e, `Could not attach "${f.filename}".`); }
+  }
+}
+// "Edit & forward": the files of the original are copied (on the server) into the new message.
+async function carryFiles(m, folder) {
+  const list = m.attachments || []; let lost = 0; const seq = composeSeq;
+  for (let n = 0; n < list.length && cFiles.length < MAX_FILES && seq === composeSeq; n++) {
+    const f = { tmp: true, filename: list[n].filename || 'attachment', size: list[n].size || 0 };
+    cFiles.push(f); renderComposeFiles();
+    try { finishUpload(f, await api(`/api/mails/${encodeURIComponent(m.id)}/attachments/${n}/copy?folder=${folder}`, { method: 'POST' })); } catch (e) {
+      lost++; const at = cFiles.indexOf(f); if (at >= 0) { cFiles.splice(at, 1); renderComposeFiles(); }
+    }
+  }
+  if (lost || list.length > MAX_FILES) toast('Some attachments could not be added.');
+}
+$('#cAttachBtn').on('click', () => $('#cFile').trigger('click'));
+$('#cFile').on('change', function () { attachFiles(this.files); this.value = ''; });
+$('#cAttach').on('click', '.attach-x', function () {
+  const i = Number($(this).closest('.attach-chip').attr('data-i'));
+  const f = cFiles[i];
+  if (!f) return;
+  cFiles.splice(i, 1); renderComposeFiles();
+  if (f.fid) { dropUpload(f.fid); queueDraft(); } // a file already in the draft is removed when the draft is saved
+});
+
 // ---- drafts: saved a couple of seconds after you stop typing ----
 const composeData = () => {
   const $c = $('.compose'); const tpl = $c.data('tpl');
@@ -949,9 +1078,10 @@ const composeData = () => {
     to: pillsOf($('#cTo')), cc: pillsOf($('#cCc')), bcc: pillsOf($('#cBcc')),
     subject: $('#cSubject').val(), text: $('#cBody').val(), htmlMode: $('#cHtml').is(':checked'),
     replyToId: $c.data('replyToId') || undefined, templateHtml: tpl ? tpl.html : '', templateName: tpl ? tpl.name : '',
+    attachments: cFiles.filter((f) => f.fid).map((f) => ({ fid: f.fid })),
   };
 };
-const composeEmpty = (d) => !d.to.length && !d.cc.length && !d.bcc.length && !d.subject.trim() && !d.text.trim() && !d.templateHtml;
+const composeEmpty = (d) => !d.to.length && !d.cc.length && !d.bcc.length && !d.subject.trim() && !d.text.trim() && !d.templateHtml && !d.attachments.length;
 function queueDraft() { composeDirty = true; clearTimeout(draftTimer); draftTimer = setTimeout(() => saveDraft(), 2000); }
 async function saveDraft() {
   clearTimeout(draftTimer);
@@ -974,9 +1104,12 @@ async function saveDraft() {
   } finally { draftBusy = null; }
 }
 
-function openCompose({ to = [], cc = [], bcc = [], from = '', subject = '', body = '', replyToId = null, draftId = null, template = null, htmlMode = false, title = 'New Message' } = {}) {
+function openCompose({ to = [], cc = [], bcc = [], from = '', subject = '', body = '', replyToId = null, draftId = null, template = null, htmlMode = false, attachments = [], title = 'New Message' } = {}) {
   clearTimeout(draftTimer);
   $('#composeTitle').text(title);
+  composeSeq++;
+  cFiles = (attachments || []).filter((a) => a && a.fid).map((a) => ({ fid: a.fid, filename: a.filename, contentType: a.contentType, size: a.size }));
+  renderComposeFiles();
   $('#cFrom').html((config.aliases || []).map((a) => `<option>${esc(a)}</option>`).join('')).closest('.form-group').toggle((config.aliases || []).length > 1);
   if (from) $('#cFrom').val(from);
   setPills($('#cTo'), to); setPills($('#cCc'), cc); setPills($('#cBcc'), bcc);
@@ -993,6 +1126,7 @@ function openCompose({ to = [], cc = [], bcc = [], from = '', subject = '', body
 
 function closeCompose() {
   clearTimeout(draftTimer); composeDirty = false;
+  composeSeq++; cFiles = []; renderComposeFiles(); // a file still uploading finds its chip gone and is dropped again
   $('.compose').addClass('d-none').removeClass('minimize fullscreen');
   $('.menu-compose').removeClass('d-none');
   dropLayer('compose');
@@ -1003,7 +1137,7 @@ async function editDraft(id) {
   if (!m) return toast('Draft not found.');
   openCompose({
     to: m.to, cc: m.cc, bcc: m.bcc, from: m.from, subject: m.subject === '(no subject)' ? '' : m.subject, body: m.text || '',
-    replyToId: m.replyToId, draftId: m.id, htmlMode: m.htmlMode, title: 'Draft',
+    replyToId: m.replyToId, draftId: m.id, htmlMode: m.htmlMode, attachments: m.attachments, title: 'Draft',
     template: m.templateHtml ? { name: m.templateName || 'Template', html: m.templateHtml } : null,
   });
 }
@@ -1027,12 +1161,13 @@ async function sendMail() {
   commitAllPills();
   if ($('.compose .pill.bad').length) return toast('Fix the red address first.');
   if (!pillsOf($('#cTo')).length) return toast('Add at least one recipient.');
+  if (cFiles.some((f) => f.tmp)) return toast('Wait for the files to finish uploading.');
   clearTimeout(draftTimer);
   $('#cSend').prop('disabled', true);
   try {
     if (draftBusy) await draftBusy.catch(() => {});
     const d = composeData(); const $c = $('.compose'); const tpl = $c.data('tpl');
-    const payload = { to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, from: d.from || undefined, replyToId: d.replyToId, draftId: $c.data('draftId') || undefined };
+    const payload = { to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, from: d.from || undefined, replyToId: d.replyToId, draftId: $c.data('draftId') || undefined, attachments: d.attachments };
     if (tpl) { // message first, then the template block
       const head = d.htmlMode ? d.text : `<div style="white-space:pre-wrap">${esc(d.text)}</div>`;
       payload.html = `${head}<br><br>${tpl.html}`;
@@ -1192,8 +1327,8 @@ async function fwdSend() {
   if (!navigator.onLine) return toast('You are offline. Connect to forward.');
   const $b = $('#fwdConfirm').prop('disabled', true).text('Sending…');
   try {
-    await api(`/api/mails/${encodeURIComponent(m.id)}/forward?folder=${folder}`, { method: 'POST', body: JSON.stringify({ to: $('#fwdAddr').text() }) });
-    fwdModal().hide(); toast('Forwarded');
+    const r = await api(`/api/mails/${encodeURIComponent(m.id)}/forward?folder=${folder}`, { method: 'POST', body: JSON.stringify({ to: $('#fwdAddr').text() }) });
+    fwdModal().hide(); toast(r && r.skipped ? `Forwarded. ${r.skipped} attachment${r.skipped === 1 ? ' was' : 's were'} too large to include.` : 'Forwarded');
     await syncFolder('sent', false).catch(() => {});
     if (state.folder === 'sent') await showFolder();
   } catch (e) { toast(e.message); $b.prop('disabled', false).text('Confirm & send'); }
@@ -1212,6 +1347,7 @@ function startForward() {
     body: `\n\n---------- Forwarded message ----------\nFrom: ${m.from}\nDate: ${fullDate(m.date)}\nSubject: ${m.subject}\nTo: ${m.to.join(', ')}\n\n${plain(m).slice(0, 4000)}`,
     title: 'Forward',
   });
+  if ((m.attachments || []).length) carryFiles(m, state.folder);
 }
 
 // Shares the message text with another app (phone share sheet); copies it where sharing is not available.
@@ -1552,6 +1688,7 @@ $('#cDiscard').on('click', async (e) => {
   clearTimeout(draftTimer); composeDirty = false;
   if (draftBusy) await draftBusy.catch(() => {});
   const did = $('.compose').data('draftId');
+  cFiles.forEach((f) => dropUpload(f.fid)); // files not in a saved draft yet; the ones in the draft go with it
   if (did && navigator.onLine) {
     try {
       await api(`/api/mails/${encodeURIComponent(did)}?folder=drafts`, { method: 'DELETE' });
