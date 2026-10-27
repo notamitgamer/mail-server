@@ -156,6 +156,14 @@
             <span>Templates</span>
           </a>
         </nav>
+        <label class="sidebar-label">Storage</label>
+        <div id="storageBox" class="storage-box">
+          <div class="storage-row"><span>Downloaded files</span><strong id="storageText">&nbsp;</strong></div>
+          <div class="storage-bar" role="progressbar" aria-label="Space used by downloaded files" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="storageFill"></span></div>
+          <small id="storageCap" class="storage-cap"></small>
+          <label class="storage-auto"><input id="storageAuto" type="checkbox" checked> Fetch small files automatically</label>
+          <button id="storageClear" type="button" class="btn btn-sm btn-white storage-clear" disabled><i class="ri-delete-bin-line" aria-hidden="true"></i> Clear downloaded files</button>
+        </div>
       </div>
       <div id="buildInfo" class="sidebar-footer" aria-live="polite">
         <label class="sidebar-label">Build</label>
@@ -287,6 +295,7 @@
           <div class="form-group">
             <textarea id="cBody" class="form-control" rows="10" aria-label="Message"></textarea>
           </div>
+          <div id="cAttach" class="attach-list compose-attach d-none" aria-label="Attached files"></div>
           <div id="cTpl" class="tpl-bar d-none" role="group" aria-label="Template">
             <span>Add a template?</span>
             <select id="cTplSel" class="form-select form-select-sm" aria-label="Template"></select>
@@ -305,6 +314,10 @@
           <button id="cSend" type="button" class="btn btn-primary btn-icontext">
             <i class="ri-send-plane-fill me-2"></i> Send
           </button>
+          <button id="cAttachBtn" type="button" class="btn btn-white btn-icon ms-2" title="Attach files" aria-label="Attach files">
+            <i class="ri-attachment-2"></i>
+          </button>
+          <input id="cFile" type="file" multiple class="d-none" tabindex="-1" aria-hidden="true">
           <label class="ms-3 small d-flex align-items-center gap-1 mb-0">
             <input id="cHtml" type="checkbox"> Send as HTML
           </label>
@@ -388,7 +401,7 @@
               <label for="fwdTo" class="form-label">Send this message to</label>
               <input id="fwdTo" type="email" class="form-control" placeholder="name@example.com" autocomplete="off" inputmode="email">
               <div id="fwdErr" class="text-danger small mt-2 d-none"></div>
-              <p class="text-muted small mt-3 mb-0">Sent as it is, from your address. Attachments are not included. <a href="#" id="fwdEdit">Edit before sending</a></p>
+              <p class="text-muted small mt-3 mb-0">Sent as it is, from your address, with its attachments. <a href="#" id="fwdEdit">Edit before sending</a></p>
             </div>
             <div id="fwdStep2" class="d-none">
               <p class="mb-2">Forward <strong id="fwdSubj"></strong> to:</p>

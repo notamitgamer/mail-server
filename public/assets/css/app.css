@@ -103,6 +103,27 @@ hr { color: var(--surface1); }
 .attach-chip .attach-size { flex: none; opacity: .75; }
 .attach-chip.saved .attach-state { color: var(--green, #a6e3a1); }
 .attach-chip.busy { cursor: progress; opacity: .8; }
+/* files attached in the composer: not clickable, with a remove button */
+.compose-attach { margin: 10px 0 0; }
+.compose-attach.d-none { display: none; }
+.attach-chip.compose-chip { cursor: default; }
+.attach-chip.compose-chip:hover { border-color: var(--surface1); color: var(--subtext0); }
+.attach-chip .attach-x { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 20px; height: 20px; margin: 0 -4px 0 2px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.attach-chip .attach-x:hover, .attach-chip .attach-x:focus-visible { background: var(--surface1); color: var(--text); }
+.attach-chip.failed { border-color: var(--red); }
+
+/* ---- storage panel (left pane) ---- */
+.storage-box { font-size: 13px; color: var(--subtext0); }
+.storage-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.storage-row strong { font-weight: 500; color: var(--text); text-align: right; }
+.storage-bar { height: 6px; margin: 8px 0 4px; overflow: hidden; border-radius: 3px; background: var(--surface0); }
+.storage-bar span { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--lavender); transition: width .3s ease; }
+.storage-bar.near span { background: var(--peach); }
+.storage-cap { display: block; margin-bottom: 10px; color: var(--overlay1); }
+.storage-auto { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; line-height: 1.35; cursor: pointer; }
+.storage-auto input { flex: none; margin-top: 2px; }
+.storage-clear { display: inline-flex; align-items: center; gap: 6px; }
+.storage-clear:disabled { opacity: .5; }
 
 /* ---- message menu (three dots) ---- */
 .mailcontent-subject .dropdown { display: inline-block; }

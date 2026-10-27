@@ -462,6 +462,48 @@ public class MainActivity extends BridgeActivity {
     }
   }
 
+  // Android 9 and older: saving into Downloads needs the storage permission. The file waits here until the
+  // permission question is answered, then the page is told how it went.
+  private String legacyName;
+  private String legacyMime;
+  private byte[] legacyData;
+  private final androidx.activity.result.ActivityResultLauncher<String> legacyPerm = registerForActivityResult(
+      new androidx.activity.result.contract.ActivityResultContracts.RequestPermission(), granted -> {
+        boolean ok = false;
+        if (granted && legacyData != null) {
+          try {
+            ok = writeLegacy(legacyName, legacyMime, legacyData);
+          } catch (Exception ignored) {
+          }
+        }
+        legacyData = null;
+        final String js = "window.__nativeSaved&&window.__nativeSaved(" + ok + ")";
+        getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript(js, null));
+      });
+
+  /** Writes into the public Downloads folder (never over a file that is already there) and lists it in the Downloads app. */
+  private boolean writeLegacy(String name, String type, byte[] data) throws java.io.IOException {
+    java.io.File dir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+    if (!dir.exists() && !dir.mkdirs()) return false;
+    java.io.File f = new java.io.File(dir, name);
+    int dot = name.lastIndexOf('.');
+    String stem = dot > 0 ? name.substring(0, dot) : name;
+    String ext = dot > 0 ? name.substring(dot) : "";
+    for (int i = 1; f.exists() && i < 1000; i++) {
+      f = new java.io.File(dir, stem + " (" + i + ")" + ext);
+    }
+    if (f.exists()) return false;
+    try (java.io.FileOutputStream os = new java.io.FileOutputStream(f)) {
+      os.write(data);
+    }
+    try { // tapping the entry in the Downloads app opens the file
+      ((android.app.DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE))
+          .addCompletedDownload(f.getName(), f.getName(), true, type, f.getAbsolutePath(), f.length(), true);
+    } catch (Exception ignored) { // the file is saved either way
+    }
+    return true;
+  }
+
   /** Called from the web app as window.MailNative.* */
   private class Native {
     @JavascriptInterface
@@ -503,26 +545,30 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Saves an attachment (base64) into the Downloads folder and offers to open it. A WebView cannot download a
-     * blob itself. Needs Android 10+ (no storage permission is required there); returns false otherwise.
+     * Saves an attachment (base64) into the Downloads folder. A WebView cannot download a blob itself.
+     * Returns "ok" when saved, "" when it failed, and "wait" on Android 9 and older when the storage permission
+     * is being asked for: the answer then arrives through window.__nativeSaved(true|false).
+     * Android 10+ needs no permission and also offers to open the file; older versions list it in the
+     * Downloads app instead.
      */
     @JavascriptInterface
-    public boolean saveFile(String name, String mime, String base64) {
-      if (Build.VERSION.SDK_INT < 29 || base64 == null) return false;
+    public String saveFile(String name, String mime, String base64) {
+      if (base64 == null) return "";
       try {
-        String safe = (name == null ? "" : name).replaceAll("[\\\\/:*?\"<>|\\r\\n]", "_").trim();
+        String safe = (name == null ? "" : name).replaceAll("[\\\\/:*?\"<>|\\r\\n]", "_").replaceAll("^\\.+", "").trim();
         if (safe.isEmpty()) safe = "attachment";
         final String type = (mime == null || mime.isEmpty()) ? "application/octet-stream" : mime;
         byte[] data = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+        if (Build.VERSION.SDK_INT < 29) return saveLegacy(safe, type, data);
         android.content.ContentResolver cr = MainActivity.this.getContentResolver();
         android.content.ContentValues v = new android.content.ContentValues();
         v.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, safe);
         v.put(android.provider.MediaStore.Downloads.MIME_TYPE, type);
         v.put(android.provider.MediaStore.Downloads.IS_PENDING, 1);
         final Uri uri = cr.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
-        if (uri == null) return false;
+        if (uri == null) return "";
         try (java.io.OutputStream os = cr.openOutputStream(uri)) {
-          if (os == null) return false;
+          if (os == null) return "";
           os.write(data);
         }
         v.clear();
@@ -537,10 +583,112 @@ public class MainActivity extends BridgeActivity {
             }
           });
         }
+        return "ok";
+      } catch (Exception e) {
+        return "";
+      }
+    }
+
+    // ---- Chunked save (Android 10+): the web app sends a big file in pieces, so it is never held as one huge
+    // string on either side of the bridge. One file at a time. beginFile returns false on older Android, and
+    // the web app then falls back to saveFile. ----
+    private Uri outUri;
+    private java.io.OutputStream outStream;
+    private String outType;
+
+    @JavascriptInterface
+    public synchronized boolean beginFile(String name, String mime) {
+      abortFile();
+      if (Build.VERSION.SDK_INT < 29) return false;
+      try {
+        String safe = (name == null ? "" : name).replaceAll("[\\\\/:*?\"<>|\\r\\n]", "_").replaceAll("^\\.+", "").trim();
+        if (safe.isEmpty()) safe = "attachment";
+        outType = (mime == null || mime.isEmpty()) ? "application/octet-stream" : mime;
+        android.content.ContentValues v = new android.content.ContentValues();
+        v.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, safe);
+        v.put(android.provider.MediaStore.Downloads.MIME_TYPE, outType);
+        v.put(android.provider.MediaStore.Downloads.IS_PENDING, 1);
+        android.content.ContentResolver cr = MainActivity.this.getContentResolver();
+        outUri = cr.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+        if (outUri == null) return false;
+        outStream = cr.openOutputStream(outUri);
+        if (outStream == null) {
+          abortFile();
+          return false;
+        }
         return true;
       } catch (Exception e) {
+        abortFile();
         return false;
       }
+    }
+
+    @JavascriptInterface
+    public synchronized boolean appendFile(String base64) {
+      if (outStream == null || base64 == null) return false;
+      try {
+        outStream.write(android.util.Base64.decode(base64, android.util.Base64.DEFAULT));
+        return true;
+      } catch (Exception e) {
+        abortFile();
+        return false;
+      }
+    }
+
+    @JavascriptInterface
+    public synchronized boolean endFile() {
+      if (outStream == null || outUri == null) return false;
+      final Uri uri = outUri;
+      final String type = outType;
+      try {
+        outStream.close();
+        outStream = null;
+        android.content.ContentValues v = new android.content.ContentValues();
+        v.put(android.provider.MediaStore.Downloads.IS_PENDING, 0);
+        MainActivity.this.getContentResolver().update(uri, v, null, null);
+        outUri = null;
+        if (!"application/vnd.android.package-archive".equals(type)) { // never launch an installer from a mail
+          runOnUiThread(() -> {
+            try {
+              MainActivity.this.startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(uri, type)
+                  .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception ignored) { // no app can open it: it is still in Downloads
+            }
+          });
+        }
+        return true;
+      } catch (Exception e) {
+        abortFile();
+        return false;
+      }
+    }
+
+    /** Drops a half-written file (a failed or cancelled save), so no broken file is left in Downloads. */
+    @JavascriptInterface
+    public synchronized void abortFile() {
+      try {
+        if (outStream != null) outStream.close();
+      } catch (Exception ignored) {
+      }
+      try {
+        if (outUri != null) MainActivity.this.getContentResolver().delete(outUri, null, null);
+      } catch (Exception ignored) {
+      }
+      outStream = null;
+      outUri = null;
+    }
+
+    /** Android 9 and older: needs the storage permission, which is asked for the first time a file is saved. */
+    private String saveLegacy(String safe, String type, byte[] data) throws java.io.IOException {
+      if (androidx.core.content.ContextCompat.checkSelfPermission(MainActivity.this,
+          android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        return writeLegacy(safe, type, data) ? "ok" : "";
+      }
+      legacyName = safe;
+      legacyMime = type;
+      legacyData = data; // kept until the permission answer arrives
+      runOnUiThread(() -> legacyPerm.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE));
+      return "wait";
     }
 
     /** Clear notification badges when inbox has no unread messages. */
