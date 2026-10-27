@@ -1,6 +1,6 @@
 # Third-party notices
 
-mail-server is released under the [MIT License](LICENSE). The web app in `public/` is built on a third-party template and bundles several open-source libraries. Their copyright notices and licenses are listed here and kept next to the files themselves.
+Mailbox is released under the [MIT License](LICENSE). The web app in `public/` is built on a third-party template and bundles several open-source libraries. Their copyright notices and licenses are listed here and kept next to the files themselves.
 
 ## SmartMail (interface template)
 

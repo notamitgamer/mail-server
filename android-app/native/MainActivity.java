@@ -540,7 +540,7 @@ public class MainActivity extends BridgeActivity {
     /** Opens a release download in the browser; only this repo's GitHub URLs are allowed. */
     @JavascriptInterface
     public void openUrl(String u) {
-      if (u == null || !u.startsWith("https://github.com/notamitgamer/mail-server/")) return;
+      if (u == null || !u.startsWith("https://github.com/notamitgamer/mailbox/")) return;
       runOnUiThread(() -> MainActivity.this.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u))));
     }
 
