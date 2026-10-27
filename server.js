@@ -1088,7 +1088,11 @@ app.get("/demo", (req, res) => res.sendFile(path.join(__dirname, "public", "demo
 
 // Proxy Firebase Auth handler to the underlying Firebase app domain
 app.get("/__/auth/*", async (req, res) => {
-  const targetUrl = "https://mail-server-notamitgamer.firebaseapp.com" + req.originalUrl;
+  // The upstream domain comes from your own FIREBASE_WEB_CONFIG (authDomain), never hardcoded.
+  let authDomain = '';
+  try { authDomain = String((JSON.parse(process.env.FIREBASE_WEB_CONFIG || 'null') || {}).authDomain || '').trim(); } catch (err) { /* ignore */ }
+  if (!/^[a-z0-9.-]+\.(firebaseapp\.com|web\.app)$/i.test(authDomain)) return res.status(404).send("Auth proxy not configured");
+  const targetUrl = "https://" + authDomain + req.originalUrl;
   try {
     const upstream = await fetch(targetUrl);
     res.status(upstream.status);
